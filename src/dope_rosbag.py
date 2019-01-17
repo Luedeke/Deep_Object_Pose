@@ -253,7 +253,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         config_name = sys.argv[1]
     else:
-        config_name = "config_pose_images.yaml"
+        config_name = "config_pose_rosbag.yaml"
     rospack = rospkg.RosPack()
     params = None
     yaml_path = g_path2package + '/config/{}'.format(config_name)
