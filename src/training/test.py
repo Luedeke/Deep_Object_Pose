@@ -689,7 +689,638 @@ class MultipleVertexJson(data.Dataset):
             'beliefs': beliefs,
         }
 
+#-----------------------------------------------------------------------------------------------------------------------
+# Some simple vector math functions to find the angle ------------------------------------------------------------------
+# between two points, used by affinity fields.  ------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
 
+
+def length(v):
+    return sqrt(v[0] ** 2 + v[1] ** 2)
+
+
+def dot_product(v, w):
+    return v[0] * w[0] + v[1] * w[1]
+
+
+def normalize(v):
+    norm = np.linalg.norm(v, ord=1)
+    if norm == 0:
+        norm = np.finfo(v.dtype).eps
+    return v / norm
+
+
+def determinant(v, w):
+    return v[0] * w[1] - v[1] * w[0]
+
+
+def inner_angle(v, w):
+    cosx = dot_product(v, w) / (length(v) * length(w))
+    rad = acos(cosx)  # in radians
+    return rad * 180 / pi  # returns degrees
+
+
+def py_ang(A, B=(1, 0)):
+    inner = inner_angle(A, B)
+    det = determinant(A, B)
+    if det < 0:  # this is a property of the det. If the det < 0 then B is clockwise of A
+        return inner
+    else:  # if the det > 0 then A is immediately clockwise of B
+        return 360 - inner
+
+
+def GenerateMapAffinity(img, nb_vertex, pointsInterest, objects_centroid, scale):
+    """
+    Function to create the affinity maps,
+    e.g., vector maps pointing toward the object center.
+
+    Args:
+        img: PIL image
+        nb_vertex: (int) number of points
+        pointsInterest: list of points
+        objects_centroid: (x,y) centroids for the obects
+        scale: (float) by how much you need to scale down the image
+    return:
+        return a list of tensors for each point except centroid point
+    """
+
+    # Apply the downscale right now, so the vectors are correct.
+    img_affinity = Image.new(img.mode, (int(img.size[0] / scale), int(img.size[1] / scale)), "black")
+    # Create the empty tensors
+    totensor = transforms.Compose([transforms.ToTensor()])
+
+    affinities = []
+    for i_points in range(nb_vertex):
+        affinities.append(torch.zeros(2, int(img.size[1] / scale), int(img.size[0] / scale)))
+
+    for i_pointsImage in range(len(pointsInterest)):
+        pointsImage = pointsInterest[i_pointsImage]
+        center = objects_centroid[i_pointsImage]
+        for i_points in range(nb_vertex):
+            point = pointsImage[i_points]
+            affinity_pair, img_affinity = getAfinityCenter(int(img.size[0] / scale),
+                                                           int(img.size[1] / scale),
+                                                           tuple((np.array(pointsImage[i_points]) / scale).tolist()),
+                                                           tuple((np.array(center) / scale).tolist()),
+                                                           img_affinity=img_affinity, radius=1)
+
+            affinities[i_points] = (affinities[i_points] + affinity_pair) / 2
+
+            # Normalizing
+            v = affinities[i_points].numpy()
+
+            xvec = v[0]
+            yvec = v[1]
+
+            norms = np.sqrt(xvec * xvec + yvec * yvec)
+            nonzero = norms > 0
+
+            xvec[nonzero] /= norms[nonzero]
+            yvec[nonzero] /= norms[nonzero]
+
+            affinities[i_points] = torch.from_numpy(np.concatenate([[xvec], [yvec]]))
+    affinities = torch.cat(affinities, 0)
+
+    return affinities
+
+
+def getAfinityCenter(width, height, point, center, radius=7, img_affinity=None):
+    """
+    Function to create the affinity maps,
+    e.g., vector maps pointing toward the object center.
+
+    Args:
+        width: image wight
+        height: image height
+        point: (x,y)
+        center: (x,y)
+        radius: pixel radius
+        img_affinity: tensor to add to
+    return:
+        return a tensor
+    """
+    tensor = torch.zeros(2, height, width).float()
+
+    # Create the canvas for the afinity output
+    imgAffinity = Image.new("RGB", (width, height), "black")
+    totensor = transforms.Compose([transforms.ToTensor()])
+
+    draw = ImageDraw.Draw(imgAffinity)
+    r1 = radius
+    p = point
+    draw.ellipse((p[0] - r1, p[1] - r1, p[0] + r1, p[1] + r1), (255, 255, 255))
+
+    del draw
+
+    # Compute the array to add the afinity
+    array = (np.array(imgAffinity) / 255)[:, :, 0]
+
+    angle_vector = np.array(center) - np.array(point)
+    angle_vector = normalize(angle_vector)
+    affinity = np.concatenate([[array * angle_vector[0]], [array * angle_vector[1]]])
+
+    # print (tensor)
+    if not img_affinity is None:
+        # Find the angle vector
+        # print (angle_vector)
+        if length(angle_vector) > 0:
+            angle = py_ang(angle_vector)
+        else:
+            angle = 0
+        # print(angle)
+        c = np.array(colorsys.hsv_to_rgb(angle / 360, 1, 1)) * 255
+        draw = ImageDraw.Draw(img_affinity)
+        draw.ellipse((p[0] - r1, p[1] - r1, p[0] + r1, p[1] + r1), fill=(int(c[0]), int(c[1]), int(c[2])))
+        del draw
+    re = torch.from_numpy(affinity).float() + tensor
+    return re, img_affinity
+
+
+def CreateBeliefMap(img, pointsBelief, nbpoints, sigma=16):
+    """
+    Args:
+        img: image
+        pointsBelief: list of points in the form of
+                      [nb object, nb points, 2 (x,y)]
+        nbpoints: (int) number of points, DOPE uses 8 points here
+        sigma: (int) size of the belief map point
+    return:
+        return an array of PIL black and white images representing the
+        belief maps
+    """
+    beliefsImg = []
+    sigma = int(sigma)
+    for numb_point in range(nbpoints):
+        array = np.zeros(img.size)
+        out = np.zeros(img.size)
+
+        for point in pointsBelief:
+            p = point[numb_point]
+            w = int(sigma * 2)
+            if p[0] - w >= 0 and p[0] + w < img.size[0] and p[1] - w >= 0 and p[1] + w < img.size[1]:
+                for i in range(int(p[0]) - w, int(p[0]) + w):
+                    for j in range(int(p[1]) - w, int(p[1]) + w):
+                        array[i, j] = np.exp(-(((i - p[0]) ** 2 + (j - p[1]) ** 2) / (2 * (sigma ** 2))))
+
+        stack = np.stack([array, array, array], axis=0).transpose(2, 1, 0)
+        imgBelief = Image.new(img.mode, img.size, "black")
+        beliefsImg.append(Image.fromarray((stack * 255).astype('uint8')))
+    return beliefsImg
+
+
+def crop(img, i, j, h, w):
+    """
+    Crop the given PIL.Image.
+
+    Args:
+        img (PIL.Image): Image to be cropped.
+        i: Upper pixel coordinate.
+        j: Left pixel coordinate.
+        h: Height of the cropped image.
+        w: Width of the cropped image.
+    Returns:
+        PIL.Image: Cropped image.
+    """
+    return img.crop((j, i, j + w, i + h))
+
+
+class AddRandomContrast(object):
+    """
+    Apply some random contrast from PIL
+    """
+
+    def __init__(self, sigma=0.1):
+        self.sigma = sigma
+
+    def __call__(self, im):
+        contrast = ImageEnhance.Contrast(im)
+        im = contrast.enhance(np.random.normal(1, self.sigma))
+        return im
+
+
+class AddRandomBrightness(object):
+    """
+    Apply some random brightness from PIL
+    """
+
+    def __init__(self, sigma=0.1):
+        self.sigma = sigma
+
+    def __call__(self, im):
+        bright = ImageEnhance.Brightness(im)
+        im = bright.enhance(np.random.normal(1, self.sigma))
+        return im
+
+
+class AddNoise(object):
+    """
+    Given mean: (R, G, B) and std: (R, G, B),
+    will normalize each channel of the torch.*Tensor, i.e.
+    channel = (channel - mean) / std
+    """
+
+    def __init__(self, std=0.1):
+        self.std = std
+
+    def __call__(self, tensor):
+        # TODO: make efficient
+        # t = torch.FloatTensor(tensor.size()).uniform_(self.min,self.max)
+        t = torch.FloatTensor(tensor.size()).normal_(0, self.std)
+
+        t = tensor.add(t)
+        t = torch.clamp(t, -1, 1)  # this is expansive
+        return t
+
+
+irange = range
+
+
+def make_grid(tensor, nrow=8, padding=2,
+              normalize=False, range=None, scale_each=False, pad_value=0):
+    """
+    Make a grid of images.
+
+    Args:
+        tensor (Tensor or list): 4D mini-batch Tensor of shape (B x C x H x W)
+            or a list of images all of the same size.
+        nrow (int, optional): Number of images displayed in each row of the grid.
+            The Final grid size is (B / nrow, nrow). Default is 8.
+        padding (int, optional): amount of padding. Default is 2.
+        normalize (bool, optional): If True, shift the image to the range (0, 1),
+            by subtracting the minimum and dividing by the maximum pixel value.
+        range (tuple, optional): tuple (min, max) where min and max are numbers,
+            then these numbers are used to normalize the image. By default, min and max
+            are computed from the tensor.
+        scale_each (bool, optional): If True, scale each image in the batch of
+            images separately rather than the (min, max) over all images.
+        pad_value (float, optional): Value for the padded pixels.
+    """
+    if not (torch.is_tensor(tensor) or
+            (isinstance(tensor, list) and all(torch.is_tensor(t) for t in tensor))):
+        raise TypeError('tensor or list of tensors expected, got {}'.format(type(tensor)))
+
+    # if list of tensors, convert to a 4D mini-batch Tensor
+    if isinstance(tensor, list):
+        tensor = torch.stack(tensor, dim=0)
+
+    if tensor.dim() == 2:  # single image H x W
+        tensor = tensor.view(1, tensor.size(0), tensor.size(1))
+    if tensor.dim() == 3:  # single image
+        if tensor.size(0) == 1:  # if single-channel, convert to 3-channel
+            tensor = torch.cat((tensor, tensor, tensor), 0)
+        tensor = tensor.view(1, tensor.size(0), tensor.size(1), tensor.size(2))
+
+    if tensor.dim() == 4 and tensor.size(1) == 1:  # single-channel images
+        tensor = torch.cat((tensor, tensor, tensor), 1)
+
+    if normalize is True:
+        tensor = tensor.clone()  # avoid modifying tensor in-place
+        if range is not None:
+            assert isinstance(range, tuple), \
+                "range has to be a tuple (min, max) if specified. min and max are numbers"
+
+        def norm_ip(img, min, max):
+            img.clamp_(min=min, max=max)
+            img.add_(-min).div_(max - min + 1e-5)
+
+        def norm_range(t, range):
+            if range is not None:
+                norm_ip(t, range[0], range[1])
+            else:
+                norm_ip(t, float(t.min()), float(t.max()))
+
+        if scale_each is True:
+            for t in tensor:  # loop over mini-batch dimension
+                norm_range(t, range)
+        else:
+            norm_range(tensor, range)
+
+    if tensor.size(0) == 1:
+        return tensor.squeeze()
+
+    # make the mini-batch of images into a grid
+    nmaps = tensor.size(0)
+    xmaps = min(nrow, nmaps)
+    ymaps = int(math.ceil(float(nmaps) / xmaps))
+    height, width = int(tensor.size(2) + padding), int(tensor.size(3) + padding)
+    grid = tensor.new(3, height * ymaps + padding, width * xmaps + padding).fill_(pad_value)
+    k = 0
+    for y in irange(ymaps):
+        for x in irange(xmaps):
+            if k >= nmaps:
+                break
+            grid.narrow(1, y * height + padding, height - padding) \
+                .narrow(2, x * width + padding, width - padding) \
+                .copy_(tensor[k])
+            k = k + 1
+    return grid
+
+
+def save_image(tensor, filename, nrow=4, padding=2, mean=None, std=None):
+    """
+    Saves a given Tensor into an image file.
+    If given a mini-batch tensor, will save the tensor as a grid of images.
+    """
+    from PIL import Image
+
+    tensor = tensor.cpu()
+    grid = make_grid(tensor, nrow=nrow, padding=10, pad_value=1)
+    if not mean is None:
+        ndarr = grid.mul(std).add(mean).mul(255).byte().transpose(0, 2).transpose(0, 1).numpy()
+    else:
+        ndarr = grid.mul(0.5).add(0.5).mul(255).byte().transpose(0, 2).transpose(0, 1).numpy()
+    im = Image.fromarray(ndarr)
+    im.save(filename)
+
+
+def DrawLine(point1, point2, lineColor, lineWidth, draw):
+    if not point1 is None and not point2 is None:
+        draw.line([point1, point2], fill=lineColor, width=lineWidth)
+
+
+def DrawDot(point, pointColor, pointRadius, draw):
+    if not point is None:
+        xy = [point[0] - pointRadius, point[1] - pointRadius, point[0] + pointRadius, point[1] + pointRadius]
+        draw.ellipse(xy, fill=pointColor, outline=pointColor)
+
+
+def DrawCube(points, which_color=0, color=None, draw=None):
+    '''Draw cube with a thick solid line across the front top edge.'''
+    lineWidthForDrawing = 2
+    lineWidthThick = 8
+    lineColor1 = (255, 215, 0)  # yellow-ish
+    lineColor2 = (12, 115, 170)  # blue-ish
+    lineColor3 = (45, 195, 35)  # green-ish
+    if which_color == 3:
+        lineColor = lineColor3
+    else:
+        lineColor = lineColor1
+
+    if not color is None:
+        lineColor = color
+
+        # draw front
+    DrawLine(points[0], points[1], lineColor, lineWidthThick, draw)
+    DrawLine(points[1], points[2], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[3], points[2], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[3], points[0], lineColor, lineWidthForDrawing, draw)
+
+    # draw back
+    DrawLine(points[4], points[5], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[6], points[5], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[6], points[7], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[4], points[7], lineColor, lineWidthForDrawing, draw)
+
+    # draw sides
+    DrawLine(points[0], points[4], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[7], points[3], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[5], points[1], lineColor, lineWidthForDrawing, draw)
+    DrawLine(points[2], points[6], lineColor, lineWidthForDrawing, draw)
+
+    # draw dots
+    DrawDot(points[0], pointColor=lineColor, pointRadius=4, draw=draw)
+    DrawDot(points[1], pointColor=lineColor, pointRadius=4, draw=draw)
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------
+# TRAINING CODE MAIN STARTING HERE -------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+
+print ("start:" , datetime.datetime.now().time())
+
+conf_parser = argparse.ArgumentParser(
+    description=__doc__, # printed with -h/--help
+    # Don't mess with format of description
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    # Turn off help, so we print all options in response to -h
+    add_help=False
+    )
+conf_parser.add_argument("-c", "--config",
+                        help="Specify config file", metavar="FILE")
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--data',
+    default = "",
+    help='path to training data')
+
+parser.add_argument('--datatest',
+    default="",
+    help='path to data testing set')
+
+parser.add_argument('--object',
+    default=None,
+    help='In the dataset which objet of interest')
+
+parser.add_argument('--workers',
+    type=int,
+    default=8,
+    help='number of data loading workers')
+
+parser.add_argument('--batchsize',
+    type=int,
+    default=32,
+    help='input batch size')
+
+parser.add_argument('--imagesize',
+    type=int,
+    default=400,
+    help='the height / width of the input image to network')
+
+parser.add_argument('--lr',
+    type=float,
+    default=0.0001,
+    help='learning rate, default=0.001')
+
+parser.add_argument('--noise',
+    type=float,
+    default=2.0,
+    help='gaussian noise added to the image')
+
+parser.add_argument('--net',
+    default='',
+    help="path to net (to continue training)")
+
+parser.add_argument('--namefile',
+    default='epoch',
+    help="name to put on the file of the save weights")
+
+parser.add_argument('--manualseed',
+    type=int,
+    help='manual seed')
+
+parser.add_argument('--epochs',
+    type=int,
+    default=60,
+    help="number of epochs to train")
+
+parser.add_argument('--loginterval',
+    type=int,
+    default=100)
+
+parser.add_argument('--gpuids',
+    nargs='+',
+    type=int,
+    default=[0],
+    help='GPUs to use')
+
+parser.add_argument('--outf',
+    default='tmp',
+    help='folder to output images and model checkpoints, it will \
+    add a train_ in front of the name')
+
+parser.add_argument('--sigma',
+    default=4,
+    help='keypoint creation size for sigma')
+
+parser.add_argument('--save',
+    action="store_true",
+    help='save a visual batch and quit, this is for\
+    debugging purposes')
+
+parser.add_argument("--pretrained",
+    default=True,
+    help='do you want to use vgg imagenet pretrained weights')
+
+parser.add_argument('--nbupdates',
+    default=None,
+    help='nb max update to network, overwrites the epoch number\
+    otherwise uses the number of epochs')
+
+parser.add_argument('--datasize',
+    default=None,
+    help='randomly sample that number of entries in the dataset folder')
+
+# Read the config but do not overwrite the args written
+args, remaining_argv = conf_parser.parse_known_args()
+defaults = { "option":"default" }
+
+if args.config:
+    config = ConfigParser.SafeConfigParser()
+    config.read([args.config])
+    defaults.update(dict(config.items("defaults")))
+
+parser.set_defaults(**defaults)
+parser.add_argument("--option")
+
+opt = parser.parse_args(remaining_argv)
+
+
+#-----------------------------------------------------------------------------------------------------------------------
+# OPT SAVE IMAGES? -----------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+
+if not "/" in opt.outf:
+    opt.outf = "train_{}".format(opt.outf)
+
+try:
+    os.makedirs(opt.outf)
+except OSError:
+    pass
+
+if opt.manualseed is None:
+    opt.manualseed = random.randint(1, 10000)
+
+# save the hyper parameters passed
+with open (opt.outf+'/header.txt','w') as file:
+    file.write(str(opt)+"\n")
+
+with open (opt.outf+'/header.txt','w') as file:
+    file.write(str(opt))
+    file.write("seed: "+ str(opt.manualseed)+'\n')
+    with open (opt.outf+'/test_metric.csv','w') as file:
+        file.write("epoch, passed,total \n")
+
+# set the manual seed.
+random.seed(opt.manualseed)
+torch.manual_seed(opt.manualseed)
+torch.cuda.manual_seed_all(opt.manualseed)
+
+# save
+if not opt.save:
+    contrast = 0.2
+    brightness = 0.2
+    noise = 0.1
+    normal_imgs = [0.59,0.25]
+    transform = transforms.Compose([
+                               AddRandomContrast(contrast),
+                               AddRandomBrightness(brightness),
+                               transforms.Scale(opt.imagesize),
+                               ])
+else:
+    contrast = 0.00001
+    brightness = 0.00001
+    noise = 0.00001
+    normal_imgs = None
+    transform = transforms.Compose([
+                           transforms.Resize(opt.imagesize),
+                           transforms.ToTensor()])
+
+print ("load data")
+#load the dataset using the loader in utils_pose
+trainingdata = None
+if not opt.data is "":
+    train_dataset = MultipleVertexJson(
+        root = opt.data,
+        objectsofinterest=opt.object,
+        keep_orientation = True,
+        noise = opt.noise,
+        sigma = opt.sigma,
+        data_size = opt.datasize,
+        save = opt.save,
+        transform = transform,
+        normal = normal_imgs,
+        target_transform = transforms.Compose([
+                               transforms.Scale(opt.imagesize//8),
+            ]),
+        )
+    trainingdata = torch.utils.data.DataLoader(train_dataset,
+        batch_size = opt.batchsize,
+        shuffle = True,
+        num_workers = opt.workers,
+        pin_memory = True
+        )
+
+if opt.save:
+    for i in range(2):
+        images = iter(trainingdata).next()
+        if normal_imgs is None:
+            normal_imgs = [0,1]
+        save_image(images['img'],'{}/train_{}.png'.format( opt.outf,str(i).zfill(5)),mean=normal_imgs[0],std=normal_imgs[1])
+
+        print (i)
+
+    print ('things are saved in {}'.format(opt.outf))
+    quit()
+
+testingdata = None
+if not opt.datatest == "":
+    testingdata = torch.utils.data.DataLoader(
+        MultipleVertexJson(
+            root = opt.datatest,
+            objectsofinterest=opt.object,
+            keep_orientation = True,
+            noise = opt.noise,
+            sigma = opt.sigma,
+            data_size = opt.datasize,
+            save = opt.save,
+            transform = transform,
+            normal = normal_imgs,
+            target_transform = transforms.Compose([
+                                   transforms.Scale(opt.imagesize//8),
+                ]),
+            ),
+        batch_size = opt.batchsize,
+        shuffle = True,
+        num_workers = opt.workers,
+        pin_memory = True)
+
+if not trainingdata is None:
+    print('training data: {} batches'.format(len(trainingdata)))
+if not testingdata is None:
+    print ("testing data: {} batches".format(len(testingdata)))
+print('load models')
 
 
 #-----------------------------------------------------------------------------------------------------------------------
@@ -702,8 +1333,199 @@ class MultipleVertexJson(data.Dataset):
 # Initialize model
 ##################################################
 
+#print ('test')
+#print (torch.version.cuda)
+
 model = DopeNetwork().cuda()
-model = torch.nn.DataParallel(net,device_ids=opt.gpuids).cuda()
+model = torch.nn.DataParallel(model,device_ids=opt.gpuids).cuda()
+print ('Load Model')
+
 model.load_state_dict(torch.load('cracker_60_Kopie.pth'))
+# Model class must be defined somewhere
+# funktioniert wohl nicht weil es voher geladen werden muss weil hier nicht das gesamte model gespeichert wurde sondern nur die values gespeichert sind
+#model = torch.load('cracker_60_Kopie.pth')
+
+# Remember that you must call model.eval() to set dropout and batch normalization layers to evaluation mode before running inference.
+# Failing to do this will yield inconsistent inference results.
+print ('Evaluate Model')
 model.eval()
 
+#print ('Modell:')
+#print (model)
+
+
+# Freeze model weights
+for param in model.parameters():
+    param.requires_grad = False
+
+#removed = list(model.children())[:-1]
+#print ('Removed Modell:')
+#print (removed)
+
+#How to remove the last FC layer from a ResNet model in PyTorch?
+#https://stackoverflow.com/questions/52548174/how-to-remove-the-last-fc-layer-from-a-resnet-model-in-pytorch
+#todo: not working?
+#my_model1 = nn.Sequential(*list(model.children())[:-1])
+#print ('MyModell:')
+#print (my_model1)
+
+
+# not working: model.m6_1.add_module
+#                   12         final_channels= 128 out_channels=16, kernel_size=1, stride=1
+#model.add_module(str(12), nn.Conv2d(128, 16, 1, 1))
+#print ('Moell neu:')
+#print (model)
+
+
+numBeliefMap=9
+numAffinity=16
+stop_at_stage=6
+#model.m6_1 = DopeNetwork.create_stage(128 + numBeliefMap + numAffinity, numAffinity, False)
+
+#print ('Moell neu2:')
+#print (model)
+
+
+
+#not working:
+# print ('Moell neu3:')
+#print (model[1])
+
+#print ('Moell neu4:')
+#print (model.children())
+
+#print ('Moell neu5:')
+#print (model.m6_1.children())
+
+my_model1123 = nn.Sequential(*list(model.module.m6_1)[:-1]) # strips off last linear layer
+#my_model1123 = nn.Sequential(*list(model.m6_1.children())[:-1])
+#my_model = nn.Sequential(*list(model.modules())[:-1]) # strips off last linear layer
+list(model.modules()) # to inspect the modules of your model
+print ('Modell after deleted fully convolutional:')
+print (my_model1123)
+
+#Fine-tune the last LAyer TODO
+my_model1123.add_module(str(i), nn.Conv2d(128, 128, kernel_size=1, stride=1))
+
+
+#copy renewed stage to DOPE
+model.module.m6_1 = my_model1123
+
+
+#print ('Moell neu52:')
+#print (model)
+
+
+
+print ('finished Fine-tuning configuration')
+
+#python train.py --data path/to/FAT --object soup --outf soup
+#--gpuids 0 1 2 3 4 5 6 7
+
+# Training command:
+# python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/ --object FerreroKuesschen --outf FerreroKuesschen
+#-----------------------------------------------------------------------------------------------------------------------
+# TRAIN ----------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
+print ('Start Fine-tuning Training')
+
+if opt.net != '':
+    model.load_state_dict(torch.load(opt.net))
+
+parameters = filter(lambda p: p.requires_grad, model.parameters())
+optimizer = optim.Adam(parameters, lr=opt.lr)
+
+with open(opt.outf + '/loss_train.csv', 'w') as file:
+    file.write('epoch,batchid,loss\n')
+
+with open(opt.outf + '/loss_test.csv', 'w') as file:
+    file.write('epoch,batchid,loss\n')
+
+nb_update_network = 0
+
+
+def _runnetwork(epoch, loader, train=True):
+    global nb_update_network
+    # net
+    if train:
+        model.train()
+    else:
+        model.eval()
+
+    for batch_idx, targets in enumerate(loader):
+
+        data = Variable(targets['img'].cuda())
+
+        output_belief, output_affinities = net(data)
+
+        if train:
+            optimizer.zero_grad()
+        target_belief = Variable(targets['beliefs'].cuda())
+        target_affinity = Variable(targets['affinities'].cuda())
+
+        loss = None
+
+        # Belief maps loss
+        for l in output_belief:  # output, each belief map layers.
+            if loss is None:
+                loss = ((l - target_belief) * (l - target_belief)).mean()
+            else:
+                loss_tmp = ((l - target_belief) * (l - target_belief)).mean()
+                loss += loss_tmp
+
+        # Affinities loss
+        for l in output_affinities:  # output, each belief map layers.
+            loss_tmp = ((l - target_affinity) * (l - target_affinity)).mean()
+            loss += loss_tmp
+
+        if train:
+            loss.backward()
+            optimizer.step()
+            nb_update_network += 1
+
+        if train:
+            namefile = '/loss_train.csv'
+        else:
+            namefile = '/loss_test.csv'
+
+        with open(opt.outf + namefile, 'a') as file:
+            s = '{}, {},{:.15f}\n'.format(
+                epoch, batch_idx, loss.data[0])
+            # print (s)
+            file.write(s)
+
+        if train:
+            if batch_idx % opt.loginterval == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
+                    epoch, batch_idx * len(data), len(loader.dataset),
+                           100. * batch_idx / len(loader), loss.data[0]))
+        else:
+            if batch_idx % opt.loginterval == 0:
+                print('Test Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
+                    epoch, batch_idx * len(data), len(loader.dataset),
+                           100. * batch_idx / len(loader), loss.data[0]))
+
+        # break
+        if not opt.nbupdates is None and nb_update_network > int(opt.nbupdates):
+            torch.save(model.state_dict(), '{}/net_{}.pth'.format(opt.outf, opt.namefile))
+            break
+
+
+for epoch in range(1, opt.epochs + 1):
+
+    if not trainingdata is None:
+        _runnetwork(epoch, trainingdata)
+
+    if not opt.datatest == "":
+        _runnetwork(epoch, testingdata, train=False)
+        if opt.data == "":
+            break  # lets get out of this if we are only testing
+    try:
+        torch.save(model.state_dict(), '{}/net_{}_{}.pth'.format(opt.outf, opt.namefile, epoch))
+    except:
+        pass
+
+    if not opt.nbupdates is None and nb_update_network > int(opt.nbupdates):
+        break
+
+print("end:", datetime.datetime.now().time())
