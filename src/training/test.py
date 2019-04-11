@@ -1120,7 +1120,7 @@ parser.add_argument('--workers',
 
 parser.add_argument('--batchsize',
     type=int,
-    default=32,
+    default=16, #TODO: default was 32 i will decrease to 16 because of the meomry
     help='input batch size')
 
 parser.add_argument('--imagesize',
@@ -1336,11 +1336,11 @@ print('load models')
 #print ('test')
 #print (torch.version.cuda)
 
-model = DopeNetwork().cuda()
-model = torch.nn.DataParallel(model,device_ids=opt.gpuids).cuda()
-print ('Load Model')
+net = DopeNetwork().cuda()
+net = torch.nn.DataParallel(net,device_ids=opt.gpuids).cuda()
+print ('Load net')
 
-model.load_state_dict(torch.load('cracker_60_Kopie.pth'))
+net.load_state_dict(torch.load('cracker_60_Kopie.pth'))
 # Model class must be defined somewhere
 # funktioniert wohl nicht weil es voher geladen werden muss weil hier nicht das gesamte model gespeichert wurde sondern nur die values gespeichert sind
 #model = torch.load('cracker_60_Kopie.pth')
@@ -1348,19 +1348,16 @@ model.load_state_dict(torch.load('cracker_60_Kopie.pth'))
 # Remember that you must call model.eval() to set dropout and batch normalization layers to evaluation mode before running inference.
 # Failing to do this will yield inconsistent inference results.
 print ('Evaluate Model')
-model.eval()
+net.eval()
 
 #print ('Modell:')
 #print (model)
 
 
 # Freeze model weights
-for param in model.parameters():
+for param in net.parameters():
     param.requires_grad = False
 
-#removed = list(model.children())[:-1]
-#print ('Removed Modell:')
-#print (removed)
 
 #How to remove the last FC layer from a ResNet model in PyTorch?
 #https://stackoverflow.com/questions/52548174/how-to-remove-the-last-fc-layer-from-a-resnet-model-in-pytorch
@@ -1397,23 +1394,25 @@ stop_at_stage=6
 #print ('Moell neu5:')
 #print (model.m6_1.children())
 
-my_model1123 = nn.Sequential(*list(model.module.m6_1)[:-1]) # strips off last linear layer
+my_model1123 = nn.Sequential(*list(net.module.m6_1)[:-1]) # strips off last linear layer
 #my_model1123 = nn.Sequential(*list(model.m6_1.children())[:-1])
 #my_model = nn.Sequential(*list(model.modules())[:-1]) # strips off last linear layer
-list(model.modules()) # to inspect the modules of your model
+list(net.modules()) # to inspect the modules of your model
 print ('Modell after deleted fully convolutional:')
 print (my_model1123)
 
 #Fine-tune the last LAyer TODO
-my_model1123.add_module(str(i), nn.Conv2d(128, 128, kernel_size=1, stride=1))
+#todo i = 13 oder 14?
+my_model1123.add_module(str(12), nn.Conv2d(128, 128, kernel_size=1, stride=1))
 
 
 #copy renewed stage to DOPE
-model.module.m6_1 = my_model1123
+net.module.m6_1 = my_model1123
+net.cuda() # this or the other one?
+#net = torch.nn.DataParallel(net,device_ids=opt.gpuids).cuda() #Push model to Cuda?
 
-
-#print ('Moell neu52:')
-#print (model)
+print ('Moell neu52:')
+print (net)
 
 
 
@@ -1430,9 +1429,9 @@ print ('finished Fine-tuning configuration')
 print ('Start Fine-tuning Training')
 
 if opt.net != '':
-    model.load_state_dict(torch.load(opt.net))
+    net.load_state_dict(torch.load(opt.net))
 
-parameters = filter(lambda p: p.requires_grad, model.parameters())
+parameters = filter(lambda p: p.requires_grad, net.parameters())
 optimizer = optim.Adam(parameters, lr=opt.lr)
 
 with open(opt.outf + '/loss_train.csv', 'w') as file:
@@ -1448,15 +1447,22 @@ def _runnetwork(epoch, loader, train=True):
     global nb_update_network
     # net
     if train:
-        model.train()
+        net.train()
     else:
-        model.eval()
+        net.eval()
 
     for batch_idx, targets in enumerate(loader):
+        #ValueError: No JSON object could be decoded
+        # -> solved with other Dataset without Ü Ä etc.
+
 
         data = Variable(targets['img'].cuda())
 
         output_belief, output_affinities = net(data)
+
+        #RuntimeError: Input    type(torch.cuda.FloatTensor) and weight    type(torch.FloatTensor)
+        #should    be    the    same -> Solved with net.cuda()  in Finetuning
+
 
         if train:
             optimizer.zero_grad()
@@ -1475,7 +1481,9 @@ def _runnetwork(epoch, loader, train=True):
 
         # Affinities loss
         for l in output_affinities:  # output, each belief map layers.
-            loss_tmp = ((l - target_affinity) * (l - target_affinity)).mean()
+            print(s)
+            loss_tmp = ((l - target_affinity) * (l - target_affinity)).mean() #RuntimeError: The size of tensor a (128) must match the size of tensor b (16)
+            # at non-singleton dimension 1
             loss += loss_tmp
 
         if train:
@@ -1507,7 +1515,7 @@ def _runnetwork(epoch, loader, train=True):
 
         # break
         if not opt.nbupdates is None and nb_update_network > int(opt.nbupdates):
-            torch.save(model.state_dict(), '{}/net_{}.pth'.format(opt.outf, opt.namefile))
+            torch.save(net.state_dict(), '{}/net_{}.pth'.format(opt.outf, opt.namefile))
             break
 
 
@@ -1521,7 +1529,7 @@ for epoch in range(1, opt.epochs + 1):
         if opt.data == "":
             break  # lets get out of this if we are only testing
     try:
-        torch.save(model.state_dict(), '{}/net_{}_{}.pth'.format(opt.outf, opt.namefile, epoch))
+        torch.save(net.state_dict(), '{}/net_{}_{}.pth'.format(opt.outf, opt.namefile, epoch))
     except:
         pass
 

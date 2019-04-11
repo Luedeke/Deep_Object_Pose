@@ -1105,7 +1105,7 @@ parser.add_argument('--workers',
 
 parser.add_argument('--batchsize', 
     type=int, 
-    default=32, 
+    default=16, #TODO: default was 32 i will decrease to 16 because of the meomry
     help='input batch size')
 
 parser.add_argument('--imagesize', 
@@ -1330,7 +1330,7 @@ def _runnetwork(epoch, loader, train=True):
 
         data = Variable(targets['img'].cuda())
         
-        output_belief, output_affinities = net(data)
+        output_belief, output_affinities = net(data) #out of memory error
                        
         if train:
             optimizer.zero_grad()
