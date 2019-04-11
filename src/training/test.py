@@ -1398,8 +1398,8 @@ my_model1123 = nn.Sequential(*list(net.module.m6_1)[:-1]) # strips off last line
 #my_model1123 = nn.Sequential(*list(model.m6_1.children())[:-1])
 #my_model = nn.Sequential(*list(model.modules())[:-1]) # strips off last linear layer
 list(net.modules()) # to inspect the modules of your model
-print ('Modell after deleted fully convolutional:')
-print (my_model1123)
+#print ('Modell after deleted fully convolutional:')
+#print (my_model1123)
 
 #Fine-tune the last LAyer TODO
 #todo i = 13 oder 14?
@@ -1411,7 +1411,7 @@ net.module.m6_1 = my_model1123
 net.cuda() # this or the other one?
 #net = torch.nn.DataParallel(net,device_ids=opt.gpuids).cuda() #Push model to Cuda?
 
-print ('Moell neu52:')
+print ('Moell neu:')
 print (net)
 
 
@@ -1453,7 +1453,7 @@ def _runnetwork(epoch, loader, train=True):
 
     for batch_idx, targets in enumerate(loader):
         #ValueError: No JSON object could be decoded
-        # -> solved with other Dataset without Ü Ä etc.
+        # -> solved with other Dataset without Umlaute
 
 
         data = Variable(targets['img'].cuda())
@@ -1481,7 +1481,7 @@ def _runnetwork(epoch, loader, train=True):
 
         # Affinities loss
         for l in output_affinities:  # output, each belief map layers.
-            print(s)
+            #print(s)
             loss_tmp = ((l - target_affinity) * (l - target_affinity)).mean() #RuntimeError: The size of tensor a (128) must match the size of tensor b (16)
             # at non-singleton dimension 1
             loss += loss_tmp
