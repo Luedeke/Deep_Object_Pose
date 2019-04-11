@@ -1347,8 +1347,8 @@ net.load_state_dict(torch.load('cracker_60_Kopie.pth'))
 
 # Remember that you must call model.eval() to set dropout and batch normalization layers to evaluation mode before running inference.
 # Failing to do this will yield inconsistent inference results.
-print ('Evaluate Model')
-net.eval()
+#print ('Evaluate Model')
+#net.eval()
 
 #print ('Modell:')
 #print (model)
@@ -1403,7 +1403,9 @@ list(net.modules()) # to inspect the modules of your model
 
 #Fine-tune the last LAyer TODO
 #todo i = 13 oder 14?
-my_model1123.add_module(str(12), nn.Conv2d(128, 128, kernel_size=1, stride=1))
+my_model1123.add_module(str(12), nn.Conv2d(128, 16, kernel_size=1, stride=1)) #128 problem muss zu 16 werden? aufgrund von
+# RuntimeError: The size of tensor a (128) must match the size of tensor b (16) at non-singleton dimension 1
+# in line loss_tmp = ((l - target_affinity) * (l - target_affinity)).mean()
 
 
 #copy renewed stage to DOPE
@@ -1429,6 +1431,7 @@ print ('finished Fine-tuning configuration')
 print ('Start Fine-tuning Training')
 
 if opt.net != '':
+    print('Start Fine-tuning Training Load Torch test')
     net.load_state_dict(torch.load(opt.net))
 
 parameters = filter(lambda p: p.requires_grad, net.parameters())
@@ -1481,7 +1484,6 @@ def _runnetwork(epoch, loader, train=True):
 
         # Affinities loss
         for l in output_affinities:  # output, each belief map layers.
-            #print(s)
             loss_tmp = ((l - target_affinity) * (l - target_affinity)).mean() #RuntimeError: The size of tensor a (128) must match the size of tensor b (16)
             # at non-singleton dimension 1
             loss += loss_tmp
