@@ -7,3 +7,15 @@ opencv_python==3.4.1.15
 Pillow==5.3.0
 torchvision==0.2.1
 PyYAML==3.13
+
+catkin-pkg==0.4.12
+enum34==1.1.16
+pyrr==0.10.3
+
+#pip install catkin_pkg
+#catkin-pkg-0.4.12 docutils-0.14
+
+
+#pip install enum34
+#installed enum34-1.1.6
+
