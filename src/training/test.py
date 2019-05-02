@@ -95,6 +95,10 @@ import warnings
 warnings.filterwarnings("ignore")
 os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3,4,5,6,7"
 
+# Image Show------------------------------------------------------------------------------------------------------------
+import matplotlib.pyplot as plt
+import numpy as np
+import torchvision
 
 ##################################################
 # NEURAL NETWORK MODEL
@@ -1081,7 +1085,14 @@ def DrawCube(points, which_color=0, color=None, draw=None):
     DrawDot(points[0], pointColor=lineColor, pointRadius=4, draw=draw)
     DrawDot(points[1], pointColor=lineColor, pointRadius=4, draw=draw)
 
-
+#-----------------------------------------------------------------------------------------------------------------------
+# functions to show an image
+#-----------------------------------------------------------------------------------------------------------------------
+def imshow(img):
+    img = img / 2 + 0.5     # unnormalize
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg, (1, 2, 0)))
+    plt.show()
 
 #-----------------------------------------------------------------------------------------------------------------------
 # TRAINING CODE MAIN STARTING HERE -------------------------------------------------------------------------------------
@@ -1380,30 +1391,32 @@ stop_at_stage=6
 #model.m6_1 = DopeNetwork.create_stage(128 + numBeliefMap + numAffinity, numAffinity, False)
 
 #print ('Moell neu2:')
-#print (model)
+#print (net)
 
 
 
-#not working:
-# print ('Moell neu3:')
-#print (model[1])
+# Remove last layer
+my_model1123 = nn.Sequential(*list(net.module.m6_1)[:-3]) # strips off last linear layer
 
-#print ('Moell neu4:')
-#print (model.children())
 
-#print ('Moell neu5:')
-#print (model.m6_1.children())
-
-my_model1123 = nn.Sequential(*list(net.module.m6_1)[:-1]) # strips off last linear layer
-#my_model1123 = nn.Sequential(*list(model.m6_1.children())[:-1])
-#my_model = nn.Sequential(*list(model.modules())[:-1]) # strips off last linear layer
 list(net.modules()) # to inspect the modules of your model
-#print ('Modell after deleted fully convolutional:')
-#print (my_model1123)
+print ('Modell after deleted fully convolutional:')
+print (my_model1123)
 
 #Fine-tune the last LAyer TODO
 #todo i = 13 oder 14?
-my_model1123.add_module(str(12), nn.Conv2d(128, 16, kernel_size=1, stride=1)) #128 problem muss zu 16 werden? aufgrund von
+
+#model.add_module(str(i), nn.Conv2d(mid_channels, final_channels, kernel_size=1, stride=1))
+
+# das davor cov
+my_model1123.add_module(str(10), nn.Conv2d(128, 128, kernel_size=1, stride=1))
+
+# Last convolution
+my_model1123.add_module(str(11), nn.ReLU(inplace=True))
+
+my_model1123.add_module(str(12), nn.Conv2d(128, 16, kernel_size=1, stride=1))
+
+#128 problem muss zu 16 werden? aufgrund von
 # RuntimeError: The size of tensor a (128) must match the size of tensor b (16) at non-singleton dimension 1
 # in line loss_tmp = ((l - target_affinity) * (l - target_affinity)).mean()
 
@@ -1413,7 +1426,7 @@ net.module.m6_1 = my_model1123
 net.cuda() # this or the other one?
 #net = torch.nn.DataParallel(net,device_ids=opt.gpuids).cuda() #Push model to Cuda?
 
-print ('Moell neu:')
+print ('Modell neu:')
 print (net)
 
 
@@ -1424,7 +1437,17 @@ print ('finished Fine-tuning configuration')
 #--gpuids 0 1 2 3 4 5 6 7
 
 # Training command:
+# python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Room --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
+
+# Cogsys rechner
+# großer datensatz
+# python test.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin      --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation   --object CandyShop2 --outf CandyShop2
+# kleiner datensatz
+# python test.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin/Room --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation   --object CandyShop2 --outf CandyShop2
+
+
 # python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/ --object FerreroKuesschen --outf FerreroKuesschen
+#rsync -avz /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/ sftp://luedeke@dlsys-MACHINE/home/luedeke/Stereo_Dataset/Single
 #-----------------------------------------------------------------------------------------------------------------------
 # TRAIN ----------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
@@ -1504,6 +1527,10 @@ def _runnetwork(epoch, loader, train=True):
             # print (s)
             file.write(s)
 
+        #print('test batch-idx:{} length data{} /data loadaer {} ({:.0f}%)]\tLoss: {:.15f}'.format(
+        #    epoch, batch_idx, len(data), len(loader.dataset),
+        #           100. * batch_idx / len(loader), loss.data[0]))
+
         if train:
             if batch_idx % opt.loginterval == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
@@ -1519,6 +1546,12 @@ def _runnetwork(epoch, loader, train=True):
         if not opt.nbupdates is None and nb_update_network > int(opt.nbupdates):
             torch.save(net.state_dict(), '{}/net_{}.pth'.format(opt.outf, opt.namefile))
             break
+        if train:
+            print('train')
+        else:
+            # print images
+            imshow(torchvision.utils.make_grid(images))
+            print('GroundTruth: ', ' '.join('%5s' % classes[labels[j]] for j in range(4)))
 
 
 for epoch in range(1, opt.epochs + 1):

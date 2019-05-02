@@ -19,3 +19,10 @@ pyrr==0.10.3
 #pip install enum34
 #installed enum34-1.1.6
 
+
+
+#Installations for https://github.com/thodan/obj_pose_eval
+pip install cython
+pip install pyopengl
+pip install opencv-python==3.1
+
