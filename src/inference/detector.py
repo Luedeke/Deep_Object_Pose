@@ -253,6 +253,23 @@ class ObjectDetector(object):
     '''This class contains methods for object detection'''
 
     @staticmethod
+    def detect_object_in_image_alreadytensor(net_model, pnp_solver, image_torch, config):
+        '''Detect objects in a image using a specific trained network model'''
+
+        if image_torch is None:
+            return []
+
+        # Run network inference
+        out, seg = net_model(image_torch)
+        vertex2 = out[-1][0]
+        aff = seg[-1][0]
+
+        # Find objects from network output
+        detected_objects = ObjectDetector.find_object_poses(vertex2, aff, pnp_solver, config)
+
+        return detected_objects
+
+    @staticmethod
     def detect_object_in_image(net_model, pnp_solver, in_img, config):
         '''Detect objects in a image using a specific trained network model'''
 

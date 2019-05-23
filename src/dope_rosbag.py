@@ -25,6 +25,8 @@ from geometry_msgs.msg import PoseStamped
 
 from PIL import Image
 from PIL import ImageDraw
+# load and display an image with Matplotlib
+#from PIL import Pyplot
 
 # Import DOPE code
 rospack = rospkg.RosPack()
@@ -37,14 +39,22 @@ from detector import *
 g_bridge = CvBridge()
 g_img = None
 g_draw = None
-
+g_img_count = 0
 
 ### Basic functions
 def __image_callback(msg):
     '''Image callback'''
     global g_img
+    global g_img_count
     g_img = g_bridge.imgmsg_to_cv2(msg, "rgb8")
-    # cv2.imwrite('img.png', cv2.cvtColor(g_img, cv2.COLOR_BGR2RGB))  # for debugging
+    name = "img" + str(g_img_count) + ".png"
+    g_img_count += 1
+    #print("Image:" + str(g_img_count))
+    #cv2.imwrite(name, cv2.cvtColor(g_img, cv2.COLOR_BGR2RGB))  # for debugging
+
+    #g_img = Image.open(g_img)
+    # summarize some details about the image
+    #print("Mode:" + str(g_img.shape))
 
 
 ### Code to visualize the neural network output

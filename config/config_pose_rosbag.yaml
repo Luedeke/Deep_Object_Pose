@@ -9,9 +9,11 @@ weights: {
     #"gelatin":"gelatin_60.pth",
     #"meat":"meat_20.pth", 
     #"mustard":"mustard_60.pth", 
-    #"soup":"soup_60.pth", 
+    #"soup":"soup_60.pth",
     #"sugar":"sugar_60.pth",
-    "CandyShop2_28_04":"CandyShop_28_04.pth"
+    #"CandyShop2_28_04":"CandyShop_28_04.pth"
+    #"CandyShop2_02_05":"CandyShop2_Epoche60_02_05.pth"
+    "CandyShop2_03_05":"CandyShop2_Epoche60_03_05.pth"
 }
 
 # Cuboid dimension in cm x,y,z
@@ -22,7 +24,10 @@ dimensions: {
     "mustard": [9.6024150848388672,19.130100250244141,5.824894905090332],
     "soup": [6.7659378051757813,10.185500144958496,6.771425724029541],
     "sugar": [9.267730712890625,17.625339508056641,4.5134143829345703],
-    "CandyShop2_28_04": [16.403600692749023,21.343700408935547,7.179999828338623],
+    "CandyShop2": [15388.533203125, 20677.193359375, 15064.41796875],  
+    #"CandyShop2_02_05": [15388.533203125, 20677.193359375, 15064.41796875],
+    "CandyShop2_03_05": [15388.533203125, 20677.193359375, 15064.41796875],  
+    #"CandyShop2_28_04": [15388.533203125, 20677.193359375, 15064.41796875],
 
 }
 
@@ -33,7 +38,9 @@ draw_colors: {
     "mustard": [217,12, 232],  # magenta
     "soup": [255, 101, 0],  # orange
     "sugar": [232, 222, 12],  # yellow
-    "CandyShop2_28_04": [255, 0, 0], #rot
+    "CandyShop2_03_05": [255, 0, 0], #rot
+    #"CandyShop2_28_04": [255, 0, 0], #rot
+    #"CandyShop2_02_05": [255, 0, 0], #rot
 }
 
 # Camera intrinsics (Logitech C920)

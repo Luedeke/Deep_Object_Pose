@@ -290,8 +290,10 @@ def loadjson(path, objectsofinterest, img):
     for i_line in range(len(data['objects'])):
         info = data['objects'][i_line]
         if not objectsofinterest is None and \
-           not objectsofinterest in info['class'].lower():
-            continue 
+           	not objectsofinterest.lower() in info['class'].lower(): #Both lower or this is not working: not objectsofinterest in info['class'].lower():
+            continue
+
+        #print("loadjson:class: "+ info['class'].lower() + " objectsofinterest: " + objectsofinterest.lower())
         
         box = info['bounding_box']
         boxToAdd = []

@@ -8,7 +8,11 @@ import csv
 x = []
 y = []
 
-with open('loss_train.csv','r') as csvfile:
+path  = '/media/nils/Seagate Expansion Drive/Thesis/Trainiert/train_CandyShop_14_05_ganz_neu/'
+file  =  'loss_train.csv'
+file2  = 'loss_test.csv'
+
+with open(path + file2,'r') as csvfile:
     plots = csv.reader(csvfile, delimiter=',')
     next(plots)
     for row in plots:
@@ -23,9 +27,6 @@ with open('loss_train.csv','r') as csvfile:
 
     tmpx = []
     tmpy = []
-
-    #print 0.000099009012047 #9.9009012047e-05
-    #print 0.000153484608745
 
     #print len(x)
     for i in xrange(len(x)):
@@ -59,7 +60,7 @@ with open('loss_train.csv','r') as csvfile:
     #   print(tmpy[i])
 
 
-plt.plot(tmpx,tmpy, label='DOPE: Fine-Tuning Layer1')
+plt.plot(tmpx,tmpy, label=file2)
 plt.xlabel('epoche')
 plt.ylabel('loss')
 plt.title('DOPE')
