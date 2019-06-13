@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+# Hi guys, here is my code for visualizing the feature maps. The detector is provided by DOPE. Hope it helps.
 #Created by Abdul-Mukit from: https://github.com/NVlabs/Deep_Object_Pose/issues/4#issuecomment-475374866
 #Edited by: Luedeke
 
@@ -23,8 +23,18 @@ from detector import *
 ## Settings
 name = 'CandyShop2'
 #net_path = '/media/nils/Seagate\ Expansion\ Drive/Thesis/Trainiert/train_CandyShop2_01_05/net_epoch_60.pth'
-net_path = '/media/nils/Seagate Expansion Drive/Thesis/Trainiert/train_CandyShop2_02_05/net_epoch_60.pth'
+#net_path = '/media/nils/Seagate Expansion Drive/Thesis/Trainiert/train_CandyShop2_02_05/net_epoch_60.pth'
 #net_path = '/home/nils/catkin_ws/src/dope/weights/soup_60.pth' #soup_60  #cracker_60
+
+net_path = '/media/nils/Seagate Expansion Drive/Thesis/Trainiert/'
+file     = 'train_CandyShop2_22_05_19-full-training/'
+#train_CandyShop2_12_05_overfitting_3000_
+#train_CandyShop2_3000_09_05_overfitting
+#train_CandyShop2_03_05
+#train_CandyShop2_02_05
+epoche   = 'net_epoch_60.pth'
+net_path = net_path + file + epoche
+
 
 #data/net/
 # net_path = '/net_epoch_42'

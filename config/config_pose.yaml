@@ -8,8 +8,9 @@ weights: {
     # "gelatin":"gelatin_60.pth",
     # "meat":"meat_20.pth", 
     # "mustard":"mustard_60.pth", 
-    "soup":"soup_60.pth", 
+    # "soup":"soup_60.pth", 
     #"sugar":"sugar_60.pth"
+    "CandyShop2":"CandyShop_28_04.pth"
 }
 
 # Cuboid dimension in cm x,y,z
@@ -20,6 +21,7 @@ dimensions: {
     "mustard": [9.6024150848388672,19.130100250244141,5.824894905090332],
     "soup": [6.7659378051757813,10.185500144958496,6.771425724029541],
     "sugar": [9.267730712890625,17.625339508056641,4.5134143829345703],
+    "CandyShop2": [15388.533203125, 20677.193359375, 15064.41796875],
 }
 
 draw_colors: {
@@ -29,17 +31,41 @@ draw_colors: {
     "mustard": [217,12, 232],  # magenta
     "soup": [255, 101, 0],  # orange
     "sugar": [232, 222, 12],  # yellow
+    "CandyShop2": [255, 0, 0], #rot
+    "CandyShop2_03_05": [255, 0, 0], #rot
 }
 
-# Camera intrinsics (Logitech C920)
+# Camera intrinsics (Logitech C920) for FAT or DOPE
+#camera_settings: {
+#    "name": "logitech_c920",
+#    "width": 640,
+#    "height": 480,
+#    "fx": 641.5,
+#    "fy": 641.5,
+#    "cx": 320.0,
+#    "cy": 240.0
+#}
+
+#Camera intrinsics (kitchen synthetic cam) for training with DOPE AND FAT
+#camera_settings: {
+#    "name": "logitech_c920",
+#    "width": 960,
+#    "height": 540,
+#    "fx": 768.16058349609375,
+#    "fy": 768.16058349609375,
+#    "cx": 480,
+#    "cy": 270,
+#}
+
+# Camera intrinsics (Logitech C920) for Luedeke Dataset
 camera_settings: {
     "name": "logitech_c920",
-    "width": 640,
-    "height": 480,
-    "fx": 641.5,
-    "fy": 641.5,
-    "cx": 320.0,
-    "cy": 240.0
+    "width": 400,
+    "height": 400,
+    "fx": 320.06689453125,
+    "fy": 320.06689453125,
+    "cx": 200.0,
+    "cy": 200.0
 }
 
 # Config params for DOPE

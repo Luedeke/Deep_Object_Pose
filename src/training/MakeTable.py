@@ -8,11 +8,14 @@ import csv
 x = []
 y = []
 
-path  = '/media/nils/Seagate Expansion Drive/Thesis/Trainiert/train_CandyShop_14_05_ganz_neu/'
+#path  = '/media/nils/Seagate Expansion Drive/Thesis/Trainiert/train_CandyShop2_23_05/'
+path  = '/home/nils/catkin_ws/src/dope/src/training/train_FerreroKuesschen_Overfitting_1000/'
 file  =  'loss_train.csv'
 file2  = 'loss_test.csv'
+file3  = 'test_metric.csv'
 
-with open(path + file2,'r') as csvfile:
+outt = 'accuracy'
+with open(path + file3,'r') as csvfile:
     plots = csv.reader(csvfile, delimiter=',')
     next(plots)
     for row in plots:
@@ -40,11 +43,13 @@ with open(path + file2,'r') as csvfile:
         else:
             #print 'Epoche: ', epoche
             #durchschnitt berechnen
-            tmpx.append(epoche)
-            tmpy.append(tmp / tmp_index)
             #print 'tmp: ', tmp, ' index: ', tmp_index
+            tmpx.append(epoche)
+            #if tmp != 0 and tmp_index != 0:
+            tmpy.append(tmp / tmp_index)
             #print 'Loss: ', (tmp/tmp_index)
-            #print 'Laenge: ', len(tmpx)
+            #print 'Laenge:tmpx: ', len(tmpx)
+            #print 'Laenge:tmpy: ', len(tmpy)
             #print(tmpx[epoche-1])
             #print(tmpy[epoche-1])
 
@@ -59,10 +64,13 @@ with open(path + file2,'r') as csvfile:
     #for i in xrange(len(tmpy)):
     #   print(tmpy[i])
 
-
-plt.plot(tmpx,tmpy, label=file2)
+#print 'Laenge:tmpx: ', len(tmpx)
+#print 'Laenge:tmpx: ', tmpx
+#print 'Laenge:tmpy: ', len(tmpy)
+#print 'Laenge:tmpy: ', tmpy
+plt.plot(tmpx,tmpy, label='Overfitting Metric')
 plt.xlabel('epoche')
-plt.ylabel('loss')
+plt.ylabel(outt)
 plt.title('DOPE')
 plt.legend()
 plt.show()

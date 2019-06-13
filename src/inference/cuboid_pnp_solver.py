@@ -39,7 +39,7 @@ class CuboidPNPSolver(object):
 
     def solve_pnp(self, cuboid2d_points, pnp_algorithm = None):
         """
-        Detects the rotation and traslation 
+        Detects the rotation and translation
         of a cuboid object from its vertexes' 
         2D location in the image
         """

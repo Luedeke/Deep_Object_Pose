@@ -296,7 +296,6 @@ class ObjectDetector(object):
         objects, all_peaks = ObjectDetector.find_objects(vertex2, aff, config)
         detected_objects = []
         obj_name = pnp_solver.object_name
-
         for obj in objects:
             # Run PNP
             points = obj[1] + [(obj[0][0]*8, obj[0][1]*8)]
@@ -310,6 +309,33 @@ class ObjectDetector(object):
                 'quaternion': quaternion,
                 'cuboid2d': cuboid2d,
                 'projected_points': projected_points,
+            })
+
+        return detected_objects
+
+    @staticmethod
+    def find_object_poses_test(vertex2, aff, pnp_solver, config):
+        '''Detect objects given network output'''
+
+        # Detect objects from belief maps and affinities
+        objects, all_peaks = ObjectDetector.find_objects(vertex2, aff, config)
+        detected_objects = []
+        obj_name = pnp_solver.object_name
+        #print("detector:objects: ", objects)
+        for obj in objects:
+            # Run PNP
+            points = obj[1] + [(obj[0][0]*8, obj[0][1]*8)]
+            cuboid2d = np.copy(points)
+            location, quaternion, projected_points = pnp_solver.solve_pnp(points)
+
+            # Save results
+            detected_objects.append({
+                'name': obj_name,
+                'location': location,
+                'quaternion': quaternion,
+                'cuboid2d': cuboid2d,
+                'projected_points': projected_points,
+                'objects': obj,
             })
 
         return detected_objects

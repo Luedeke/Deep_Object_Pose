@@ -139,7 +139,12 @@ class DopeNetwork(nn.Module):
 
         self.stop_at_stage = stop_at_stage
 
-        vgg_full = models.vgg19(pretrained=False).features
+        if pretrained is False:
+            print("Training network without imagenet weights.")
+        else:
+            print("Training network pretrained on imagenet.")
+
+        vgg_full = models.vgg19(pretrained=pretrained).features
         self.vgg = nn.Sequential()
         for i_layer in range(24):
             self.vgg.add_module(str(i_layer), vgg_full[i_layer])
@@ -294,6 +299,50 @@ def default_loader(path):
     return Image.open(path).convert('RGB')
 
 
+# Rotationsmatrix aus Quaternion
+# Die Rotationsmatrix kann aus der Quaternion berechnet werden, falls sie benoetigt wird.
+def QtoR(q):
+    '''Calculates the Rotation Matrix from Quaternion
+    a is the real part
+    b, c, d are the complex elements'''
+    # Source: Buchholz, J. J. (2013). Vorlesungsmanuskript Regelungstechnik und Flugregler.
+    # GRIN Verlag. Retrieved from http://www.grin.com/de/e-book/82818/regelungstechnik-und-flugregler
+    # https://www.cbcity.de/tutorial-rotationsmatrix-und-quaternion-einfach-erklaert-in-din70000-zyx-konvention
+    q = normQ(q)
+
+    a, b, c, d = q
+
+    R11 = (a ** 2 + b ** 2 - c ** 2 - d ** 2)
+    R12 = 2.0 * (b * c - a * d)
+    R13 = 2.0 * (b * d + a * c)
+
+    R21 = 2.0 * (b * c + a * d)
+    R22 = a ** 2 - b ** 2 + c ** 2 - d ** 2
+    R23 = 2.0 * (c * d - a * b)
+
+    R31 = 2.0 * (b * d - a * c)
+    R32 = 2.0 * (c * d + a * b)
+    R33 = a ** 2 - b ** 2 - c ** 2 + d ** 2
+
+    # https://www.matheplanet.com/matheplanet/nuke/html/viewtopic.php?topic=178732
+    # https://github.com/balzer82/RotationMatrix/blob/master/RotationMatrix-und-Quaternion.py
+    #return np.matrix([[R11, R12, R13], [R21, R22, R23], [R31, R32, R33]]) -> How it should be, but it is:
+    return np.matrix([[R13, R12, R11*-1], [R33, R32, R31*-1], [R23, R22, R21*-1]])
+
+def normQ(q):
+    '''Calculates the normalized Quaternion
+    a is the real part
+    b, c, d are the complex elements'''
+    # Source: Buchholz, J. J. (2013). Vorlesungsmanuskript Regelungstechnik und Flugregler.
+    # GRIN Verlag. Retrieved from http://www.grin.com/de/e-book/82818/regelungstechnik-und-flugregler
+    a, b, c, d = q
+
+    # Betrag
+    Z = np.sqrt(a ** 2 + b ** 2 + c ** 2 + d ** 2)
+
+    return np.array([a / Z, b / Z, c / Z, d / Z])
+
+
 def loadjson(path, objectsofinterest, img):
     """
     Loads the data from a json file.
@@ -319,7 +368,7 @@ def loadjson(path, objectsofinterest, img):
     pose_transform = []
     cuboid = []
 
-
+    #print("loadjson:data['objects'] " + data['objects'])
     for i_line in range(len(data['objects'])):
         info = data['objects'][i_line]
         if not objectsofinterest is None and \
@@ -357,6 +406,10 @@ def loadjson(path, objectsofinterest, img):
         points.append(points3d + [(pcenter[0], pcenter[1])])
         centroids.append((pcenter[0], pcenter[1]))
 
+        #save 3d keypoints? test:
+        points_keypoints_3d.append(points3d)
+        #print("loadjson:points_keypoints_3d: " , points_keypoints_3d)
+
         # load translations
         location = info['location']
         translations.append([location[0], location[1], location[2]])
@@ -365,29 +418,18 @@ def loadjson(path, objectsofinterest, img):
         rot = info["quaternion_xyzw"]
         rotations.append(rot)
 
-        # todo: pose_gu? pose_GT?
+        # todo: Change for old and new NDDS
         # load pose_transform
-        #pose_transform = info["pose_transform"]
-        pose_transform = info["pose_transform_permuted"]
-
-
+        pose_transform = info["pose_transform"] #NEW NDDS
+        #pose_transform = info["pose_transform_permuted"] #OLD NDDS FOR FAT DATASET
+        #print("pose_transform: ", pose_transform)
+        numpy_pose_transform = 0
         numpy_pose_transform = np.asarray(pose_transform)
-        #print("loadjson:type of pose_transform: ", type(numpy_pose_transform))  # + " index: " + i_line)
-        #print("loadjson:pose_transform: ", numpy_pose_transform)  # + " index: " + i_line)
-
-        #print("loadjson:type of pose_transform: ", type(pose_transform)) # + " index: " + i_line)
-        #print("loadjson:pose_transform: ", pose_transform) # + " index: " + i_line)
-        #print("loadjson:index: ", i_line)
-
-        #pt_tensor_from_list = torch.tensor(pose_transform)
-        #pose_transform = torch.FloatTensor(pose_transform)
-
-        #print("loadjson:pt_tensor_from_list: " , pt_tensor_from_list)
-        #print("loadjson:pt_tensor_from_list: " , type(pt_tensor_from_list))
-
+        #print("numpy_pose_transform: ", numpy_pose_transform)
 
         cuboid = info["cuboid"]
         #print("loadjson:cuboid: " , cuboid)
+        projected_cuboid = info["projected_cuboid"]
 
 
     return {
@@ -396,6 +438,7 @@ def loadjson(path, objectsofinterest, img):
         "translations": translations,
         "pose_transform": numpy_pose_transform,
         "cuboid": cuboid,
+        "projected_cuboid": projected_cuboid,
         "centroids": centroids,
         "points": points,
         "keypoints_2d": points_keypoints_2d,
@@ -412,23 +455,29 @@ def loadimages(root):
     def add_json_files(path, ):
         for imgpath in glob.glob(path + "/*.jpg"):
             print("imgpath: ", imgpath)
-            print("imgpath:exists: ", exists(imgpath))
-            test = exists(imgpath.replace('jpg', "json"))
-            print("imgpath:exists:replace: ", test)
-
-            if exists(imgpath) and exists(imgpath.replace('jpg', "json")): #wenn zum zugehoerigen png Bild noch ein JSON existiert dann lade es?
+            #print("imgpath:exists: ", exists(imgpath))
+            #test = exists(imgpath.replace('jpg', "json"))
+            #print("imgpath:exists:replace: ", test)
+            if exists(imgpath) and exists(imgpath.replace('jpg', "json")):  # wenn zum zugehoerigen png Bild noch ein JSON existiert dann lade es?
                 imgs.append((imgpath, imgpath.replace(path, "").replace("/", ""),
                              imgpath.replace('jpg', "json")))
 
         for imgpath in glob.glob(path + "/*.png"):
             print("imgpath: ", imgpath)
-            print("imgpath:exists: ", exists(imgpath))
-            test = exists(imgpath.replace('png', "json"))
-            print("imgpath:exists:replace: ", test)
-
-            if exists(imgpath) and exists(imgpath.replace('png', "json")): #wenn zum zugehoerigen png Bild noch ein JSON existiert dann lade es?
+            #print("imgpath:exists: ", exists(imgpath))
+            #test = exists(imgpath.replace('png', "json"))
+            #print("imgpath:exists:replace: ", test)
+            if exists(imgpath) and exists(imgpath.replace('png', "json")):  # wenn zum zugehoerigen png Bild noch ein JSON existiert dann lade es?
                 imgs.append((imgpath, imgpath.replace(path, "").replace("/", ""),
                              imgpath.replace('png', "json")))
+        #for imgpath in glob.glob(path + "/*.png"):
+        #    if exists(imgpath) and exists(imgpath.replace('png', "json")):
+        #        imgs.append((imgpath, imgpath.replace(path, "").replace("/", ""),
+        #                     imgpath.replace('png', "json")))
+        #for imgpath in glob.glob(path + "/*.jpg"):
+        #    if exists(imgpath) and exists(imgpath.replace('jpg', "json")):
+        #        imgs.append((imgpath, imgpath.replace(path, "").replace("/", ""),
+        #                     imgpath.replace('jpg', "json")))
 
     def explore(path):
         if not os.path.isdir(path):
@@ -529,8 +578,11 @@ class MultipleVertexJson(data.Dataset):
 
         data = loader(txt, self.objectsofinterest, img)
 
-        #fir die metric
+        #fuer die metric
         pose_transform = data['pose_transform']
+
+        projected_cuboid = data['projected_cuboid']
+        cuboid_gt = data['cuboid']
         # todo: pose_gu? pose_GT?
         #list to tensor
         #print("MultipleVertexJson:pose_transform: ", pose_transform)
@@ -547,7 +599,7 @@ class MultipleVertexJson(data.Dataset):
 
 
         if len(points_all) == 0:
-            points_all = torch.zeros(1)
+            points_all = torch.zeros(1, 10, 2).double()
 
         # self.save == true assumes there is only
         # one object instance in the scene.
@@ -593,7 +645,7 @@ class MultipleVertexJson(data.Dataset):
 
         def Reproject(points, tm, rm):
             """
-            Reprojection of points when rotating the image
+            Reprojection of points when rotating the image (after Data Augmetnation)
             """
             proj_cuboid = np.array(points)
 
@@ -610,6 +662,7 @@ class MultipleVertexJson(data.Dataset):
             return new_cuboid
 
         # Random image manipulation, rotation and translation with zero padding
+        # also called Data Augmentation
         dx = round(np.random.normal(0, 2) * float(self.random_translation[0]))
         dy = round(np.random.normal(0, 2) * float(self.random_translation[1]))
         angle = round(np.random.normal(0, 1) * float(self.random_rotation))
@@ -617,6 +670,8 @@ class MultipleVertexJson(data.Dataset):
         tm = np.float32([[1, 0, dx], [0, 1, dy]])
         rm = cv2.getRotationMatrix2D(
             (img.size[0] / 2, img.size[1] / 2), angle, 1)
+
+        new_pose_transform = Reproject(pose_transform, tm, rm)
 
         for i_objects in range(len(pointsBelief)):
             points = pointsBelief[i_objects]
@@ -774,14 +829,16 @@ class MultipleVertexJson(data.Dataset):
         if affinities.size()[2] == 49 and not self.test:
             affinities = torch.cat([affinities, torch.zeros(16, 50, 1)], dim=2)
 
-        #cuboid neu
+        #cuboid neu, projected_cuboid, pose_transform
         return {
             'img': img,
             "affinities": affinities,
             'beliefs': beliefs,
             'cuboid': cuboid,
+            'projected_cuboid': np.array(projected_cuboid),
             'matrix_camera': matrix_camera,
-            'pose_transform': pose_transform,
+            'pose_transform': new_pose_transform,
+            'cuboid_gt': np.array(cuboid_gt),
         }
 
 #-----------------------------------------------------------------------------------------------------------------------
@@ -1068,7 +1125,7 @@ def make_grid(tensor, nrow=8, padding=2,
     if tensor.dim() == 4 and tensor.size(1) == 1:  # single-channel images
         tensor = torch.cat((tensor, tensor, tensor), 1)
 
-    if normalize is True:
+    if normalize == True:
         tensor = tensor.clone()  # avoid modifying tensor in-place
         if range is not None:
             assert isinstance(range, tuple), \
@@ -1084,7 +1141,7 @@ def make_grid(tensor, nrow=8, padding=2,
             else:
                 norm_ip(t, float(t.min()), float(t.max()))
 
-        if scale_each is True:
+        if scale_each == True:
             for t in tensor:  # loop over mini-batch dimension
                 norm_range(t, range)
         else:
@@ -1154,7 +1211,7 @@ def DrawCube(points, which_color=0, color=None, draw=None):
     if not color is None:
         lineColor = color
 
-        # draw front
+    # draw front
     DrawLine(points[0], points[1], lineColor, lineWidthThick, draw)
     DrawLine(points[1], points[2], lineColor, lineWidthForDrawing, draw)
     DrawLine(points[3], points[2], lineColor, lineWidthForDrawing, draw)
@@ -1313,11 +1370,11 @@ parser.add_argument("--option")
 
 opt = parser.parse_args(remaining_argv)
 
-
+if opt.pretrained in ['false', 'False']:
+	opt.pretrained = False
 #-----------------------------------------------------------------------------------------------------------------------
 # OPT SAVE IMAGES? -----------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
-
 if not "/" in opt.outf:
     opt.outf = "train_{}".format(opt.outf)
 
@@ -1336,14 +1393,9 @@ with open (opt.outf + '/header.txt','w') as file:
 with open (opt.outf + '/header.txt','w') as file:
     file.write(str(opt))
     file.write("seed: " + str(opt.manualseed)+'\n')
-    with open (opt.outf+'/test_metric.csv','w') as file:
-        file.write("epoch, passed,total \n")
 
-# Save Start time
-with open (opt.outf + '/header.txt','w') as file:
-    #opt.starttime = "start: " + str(start) + "\n"
-    file.write(str(opt)+"\n")
-    file.write("\nstart: " + str(start) + "\n")
+
+print ("start:" , datetime.datetime.now().time())
 
 # set the manual seed.
 random.seed(opt.manualseed)
@@ -1373,7 +1425,7 @@ else:
 print ("load data")
 #load the dataset using the loader in utils_pose
 trainingdata = None
-if not opt.data is "":
+if not opt.data == "":
     train_dataset = MultipleVertexJson(
         root = opt.data,
         objectsofinterest=opt.object,
@@ -1451,7 +1503,7 @@ print('load models')
 #print ('test')
 #print (torch.version.cuda)
 
-net = DopeNetwork().cuda()
+net = DopeNetwork(pretrained=opt.pretrained).cuda()
 net = torch.nn.DataParallel(net,device_ids=opt.gpuids).cuda()
 print ('Load net')
 
@@ -1488,7 +1540,7 @@ stop_at_stage=6
 #print (net)
 
 # Remove last layer
-my_model1123 = nn.Sequential(*list(net.module.m6_1)[:-5]) # strips off last x layer's
+my_model1123 = nn.Sequential(*list(net.module.m6_1)[:-5])#5 # strips off last x layer's
 
 
 list(net.modules()) # to inspect the modules of your model
@@ -1564,18 +1616,23 @@ print ('finished Fine-tuning configuration')
 
 # null test: python test2.py --object test --outf test
 
-#python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/?? --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
+# python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/?? --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
 
-#python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
+# python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
+
+# python test2.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch  --object 003_cracker_box_16k --outf 003_cracker_box_16k
+
 
 # save
-#python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2 --save
+# python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2 --save
 
 
 
 # Cogsys rechner
 # overfitting datensatz
 # python train.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+
+# python train.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Livingroom --datatest /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
 
 
 # grossser datensatz
@@ -1588,7 +1645,7 @@ print ('finished Fine-tuning configuration')
 # python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/ --object FerreroKuesschen --outf FerreroKuesschen
 #rsync -avz /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset/Single
 
-#rsync -avz /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_3000/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000/
+#rsync -avz /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/ luedeke@dlsys-MACHINE:/home/luedeke/Dataset_Luedeke_Neu/
 
 #-----------------------------------------------------------------------------------------------------------------------
 # TRAIN ----------------------------------------------------------------------------------------------------------------
@@ -1603,7 +1660,7 @@ print ('finished Fine-tuning configuration')
 # Then I would test on other images.
 #https://github.com/NVlabs/Deep_Object_Pose/issues/12
 
-print ('Start Fine-tuning Training')
+print ('Start Fine-tuning Training Layers: ', str(deleted_layers))
 
 if opt.net != '':
     print('Start Fine-tuning Training Load Torch test')
@@ -1620,7 +1677,8 @@ with open(opt.outf + '/loss_test.csv', 'w') as file:
 
 nb_update_network = 0
 
-
+with open (opt.outf+'/test_metric.csv','w') as file:
+    file.write("epoch,batchid,total,passed \n")
 
 #-----------------------------------------------------------------------------------------------------------------------
 # init config_pose_rosbag-----------------------------------------------------------------------------------------------
@@ -1636,7 +1694,7 @@ with open(yaml_path, 'r') as stream:
     try:
         print("Loading DOPE parameters from '{}'...".format(yaml_path))
         params = yaml.load(stream)
-        # print('Parameters loaded.')
+        print('DOPE parameters loaded.')
     except yaml.YAMLError as exc:
         print("Error: ", exc)
 
@@ -1662,6 +1720,10 @@ config_detect.thresh_points = params["thresh_points"]
 
 def ADDErrorCuboid(pose_gu, pose_gt, cuboid):
     """
+        T and the estimated rotation R and translation T
+        we compute the average distance of all model points x from their transformed versions
+            m = avg Strich(Rx + T) minus ( R x + T)Strich
+
         Compute the ADD error for a given cuboid.
         pose_gu is the predicted pose as a matrix
         pose_gt is the ground thruth pose as a matrix
@@ -1669,13 +1731,28 @@ def ADDErrorCuboid(pose_gu, pose_gt, cuboid):
     """
     from scipy import spatial
 
+    #print("ADDErrorCuboid:pred_obj: ", pose_gt)
+    #print("ADDErrorCuboid:pose_gu: ", pose_gu)
+
     # obj = self.__obj_model
     vertices = np.array(cuboid._vertices)
-    print ("vertices.shape: ", vertices.shape)
+    #print("ADDErrorCuboid:cuboid._vertices: ", vertices)
+    #print ("ADDErrorCuboid:pose_gu.shape: ", pose_gu.shape)
+    #print ("ADDErrorCuboid:vertices.shape: ", vertices.shape)
     vertices = np.insert(vertices, 3, 1, axis=1)
+    #print("ADDErrorCuboid:vertices:insert ", vertices)
+    #print ("ADDErrorCuboid:vertices.shape: ", vertices.shape)
     vertices = np.rot90(vertices, 3)
-    print("vertices: ", vertices)
+    #print("ADDErrorCuboid:vertices:rot90 ", vertices)
 
+    #print ("ADDErrorCuboid:pose_gu.shape: ", pose_gu.shape)
+    #pose_gu = np.insert(pose_gu, 3, 1, axis=1)
+    #print("ADDErrorCuboid:pose_gu: ", pose_gu)
+    #pose_gu2 = np.array([pose_gu, [0, 0, 0, 1]])
+    #asdF = np.array([0, 0, 0, 1])
+    #pose_gu2 = np.vstack((pose_gu, asdF))
+    #print ("ADDErrorCuboid:pose_gu.shape: ", pose_gu2.shape)
+    #print("ADDErrorCuboid:pose_gu: ", pose_gu2)
     obj = vertices
     pred_obj = np.matmul(pose_gu, obj)
 
@@ -1684,11 +1761,17 @@ def ADDErrorCuboid(pose_gu, pose_gt, cuboid):
     # print (pred_obj)
 
     actual_obj = np.matmul(pose_gt, obj)
+    #print("ADDErrorCuboid:pose_gt.shape: ", pose_gt.shape)
+    #print("ADDErrorCuboid:pose_gt: ", pose_gt)
+    #print("ADDErrorCuboid:actual_obj: ", actual_obj)
     # actual_obj = np.matmul(self.LtNT, actual_obj_l)
     # print("PREDICTED OBJECT\n", pred_obj)
     # print("ACTUAL OBJECT\n", actual_obj)
     dist = spatial.distance.cdist(pred_obj.T, actual_obj.T, 'euclidean')
+    #print("ADDErrorCuboid:dist: ", dist)
     true_dist = [dist[i][i] for i in range(len(dist))]
+    #print("ADDErrorCuboid:true_dist: ", true_dist)
+    #print("ADDErrorCuboid:np.mean: ", np.mean(true_dist))
     # for i in range(len(true_dist)):
     #    if true_dist[i] >6000:
     #        print(i, true_dist[i])
@@ -1700,7 +1783,6 @@ def ADDErrorCuboid(pose_gu, pose_gt, cuboid):
 
 def _runnetwork(epoch, loader, train=True):
     global nb_update_network
-
     # net
     if train:
         net.train()
@@ -1767,30 +1849,45 @@ def _runnetwork(epoch, loader, train=True):
                            100. * batch_idx / len(loader), loss.data[0]))
         else:
             if batch_idx % opt.loginterval == 0:
+                #normal_imgs = [0.59, 0.25]
+                #images = iter(data).next()
+                #if normal_imgs is None:
+                #    normal_imgs = [0, 1]
+
+                #save_image(images['img'], '{}/train_{}.png'.format(opt.outf, str(i).zfill(5)), mean=normal_imgs[0],
+
+                img = targets['img'].cpu().numpy()[6]
+                print("size: ", len(targets['img'].cpu().numpy()))
+                # this converts it from GPU to CPU and selects first image
+                #img = img.cpu().numpy()[0]
+                # convert image back to Height,Width,Channels
+                img = np.transpose(img, (1, 2, 0))
+                # show the image
+                plt.imshow(img)
+                plt.show()
+
+                #save_image(targets['img'].cuda(), '{}/train_{}.png'.format(opt.outf, str(9).zfill(5)), mean=normal_imgs[0],
+                #           std=normal_imgs[1])
+
+                #from PIL import Image
+                #tensor = targets['img'].cpu()
+                #grid = make_grid(tensor, nrow=4, padding=10, pad_value=1)
+
+                #ndarr = grid.mul(normal_imgs[1]).add(normal_imgs[0]).mul(255).byte().transpose(0, 2).transpose(0, 1).numpy()
+                #im = Image.fromarray(ndarr)
+                #im.save('{}/train_{}.png'.format(opt.outf, str(9).zfill(5)))
+
                 print('Test Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
                     epoch, batch_idx * len(data), len(loader.dataset),
                            100. * batch_idx / len(loader), loss.data[0]))
 
-        # break
-        if not opt.nbupdates is None and nb_update_network > int(opt.nbupdates):
-            torch.save(net.state_dict(), '{}/net_{}.pth'.format(opt.outf, opt.namefile))
-            break
-
-
-        # imshow(torchvision.utils.make_grid(data))
-        # print('GroundTruth: ', ' '.join('%5s' % classes[labels[j]] for j in range(4)))
-
-        # Compute the Metric ---------------------------------------------------------------------------------------
-        # TODO: Hier die Metric implementieren
-        if train == False:
-            #print("data: ", data)
-            #img = data
-
+            # Compute the Metric ---------------------------------------------------------------------------------------
+            # print("data: ", data)
             pnp_solvers = {}
             results = {}
 
             matrix_camera = 0
-            #matrix_camera = Variable(targets['matrix_camera'].cuda())
+            # matrix_camera = Variable(targets['matrix_camera'].cuda())
             # Initialize matrix_camera parameters
             matrix_camera = np.zeros((3, 3))
             matrix_camera[0, 0] = params["camera_settings"]['fx']
@@ -1798,7 +1895,7 @@ def _runnetwork(epoch, loader, train=True):
             matrix_camera[0, 2] = params["camera_settings"]['cx']
             matrix_camera[1, 2] = params["camera_settings"]['cy']
             matrix_camera[2, 2] = 1
-            #print("matrix_camera ", matrix_camera)
+            # print("matrix_camera ", matrix_camera)
 
             cuboid = 0
             results = 0
@@ -1806,17 +1903,17 @@ def _runnetwork(epoch, loader, train=True):
             detected_objects = 0
 
             for model in params['weights']:
-                #print("for model in params['weights']:model: ", model)
+                # print("for model in params['weights']:model: ", model)
 
-                #for img in data:
+                # for img in data:
                 # print("Image: ", img)
                 # print("Image:length: ", len(img))
-                #print("Image:type: ", type(img))
+                # print("Image:type: ", type(img))
 
                 cuboid = Cuboid3d(params['dimensions'][model])
-                #print("params['dimensions'][model]: ", params['dimensions'][model])
-                #print("params['draw_colors'][model]: ", params["draw_colors"][model])
-                #init pnp_solvers
+                # print("params['dimensions'][model]: ", params['dimensions'][model])
+                # print("params['draw_colors'][model]: ", params["draw_colors"][model])
+                # init pnp_solvers
                 pnp_solvers[model] = \
                     CuboidPNPSolver(
                         model,
@@ -1835,147 +1932,193 @@ def _runnetwork(epoch, loader, train=True):
                 # Find objects from network output
                 # detected_objects = ObjectDetector.find_object_poses(vertex2, aff, pnp_solvers[model], config)
                 # print("_runnetwork:detected_objects: ", detected_objects)
-                #print("_runnetwork:results: ", results)
+                # print("_runnetwork:results: ", results)
 
+            matrixHomogen = []
             for i_r, result in enumerate(results):
                 if result["location"] is None:
                     continue
-                print("_runnetwork:results: ", results)
-                loc = result["location"]
-                ori = result["quaternion"]
+                # print("_runnetwork:results: ", results)
+                object_name = result['name']  # welches objekt gefunden wurde
+                loc = result["location"]  # translation
+                ori = result["quaternion"]  # rotation
+                # print("_runnetwork:loc: ", loc)
+                # print("loadjson:loc: ", type(loc))
+                # print("_runnetwork:ori: ", ori)
+                # print("_runnetwork:ori-type: ", type(ori))
 
                 # Initialize ROS node
-                rospy.init_node('dope_vis', anonymous=True)
+                # rospy.init_node('dope_vis', anonymous=True)
 
-                msg = PoseStamped()
-                msg.header.frame_id = params["frame_id"]
-                msg.header.stamp = rospy.Time.now()
-                CONVERT_SCALE_CM_TO_METERS = 100
-                msg.pose.position.x = loc[0] / CONVERT_SCALE_CM_TO_METERS
-                msg.pose.position.y = loc[1] / CONVERT_SCALE_CM_TO_METERS
-                msg.pose.position.z = loc[2] / CONVERT_SCALE_CM_TO_METERS
-                msg.pose.orientation.x = ori[0]
-                msg.pose.orientation.y = ori[1]
-                msg.pose.orientation.z = ori[2]
-                msg.pose.orientation.w = ori[3]
-                print("_runnetwork:msg: ", msg)
+                # msg = PoseStamped()
+                # msg.header.frame_id = params["frame_id"]
+                # msg.header.stamp = rospy.Time.now()
+                # CONVERT_SCALE_CM_TO_METERS = 100
+                # msg.pose.position.x = loc[0] / CONVERT_SCALE_CM_TO_METERS
+                # msg.pose.position.y = loc[1] / CONVERT_SCALE_CM_TO_METERS
+                # msg.pose.position.z = loc[2] / CONVERT_SCALE_CM_TO_METERS
+                # msg.pose.orientation.x = ori[0]
+                # msg.pose.orientation.y = ori[1]
+                # msg.pose.orientation.z = ori[2]
+                # msg.pose.orientation.w = ori[3]
+                # print("_runnetwork:msg: ", msg)
 
-                projected_points = result['projected_points']
-                print("_runnetwork:projected_points: ", projected_points)
+                # projected_points = result['projected_points']
+                # print("_runnetwork:projected_points: ", projected_points)
 
+                # projected_cuboid = targets['projected_cuboid']
+                # print("_runnetwork:projected_cuboid: ", projected_cuboid)
+                # print("_runnetwork:cuboid: ", cuboid)
+
+                # Rx + T homogene Rigid body tramsformation
+                # quaternion zu Rotationsmatrix berechne + Transformation = Rx +T
+                quaternation = 0
+                quaternation = QtoR(ori)
+                # print("loadjson:quaternation: ", quaternation)
+                # print("loadjson:quaternation: ", type(quaternation))
+
+                tmp = np.insert(quaternation, 3, loc, axis=0)
+                # print("loadjson:insert: ", tmp)
+                # print("loadjson:insert:type: ", type(tmp))
+                # np.set_printoptions(precision=10)
+
+                resultPoseGU = np.insert(tmp, 3, [0, 0, 0, 1], axis=1)
+                matrixHomogen.append(resultPoseGU)
+                # print("loadjson:result: ", resultPoseGU)
+
+                # g_draw = ImageDraw.Draw(im)
                 # Draw the cube
                 if None not in result['projected_points']:
                     points2d = []
                     for pair in result['projected_points']:
                         points2d.append(tuple(pair))
-                        #projected_points.append(tuple(pair))
-                        #DrawCube(points2d, params["draw_colors"])
-                        #CvBridge().cv2_to_imgmsg(np.array(data)[..., ::-1], "bgr8")
+                        # projected_points.append(tuple(pair))
+                    # print("_runnetwork:for model in params['weights']:points2d: ", points2d)
+                    # print("_runnetwork:projected_points: ", projected_points)
+                    # projected_points = points2d
+                    # DrawCube(points2d, params["draw_colors"])
+                    # CvBridge().cv2_to_imgmsg(points2d, "bgr8")
+                    # CvBridge().cv2_to_imgmsg(np.array(data)[..., ::-1], "bgr8")
+                    # cv2.imwrite('img.png', cv2.cvtColor(data, cv2.COLOR_BGR2RGB))  # for debugging
 
-                    #print("_runnetwork:for model in params['weights']:points2d: ", points2d)
-
-# python test2.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --object 003_cracker_box_16k --outf 003_cracker_box_16k
-
-                # vertex2 = output_belief[-1][0]
-                # aff = output_affinities[-1][0]
-
-
-
-            #print("_runnetwork:detected_objects: ", detected_objects)
+            # print("_runnetwork:detected_objects: ", detected_objects)
             # https://stats.stackexchange.com/questions/291820/what-is-the-definition-of-a-feature-map-aka-activation-map-in-a-convolutio
             # and feature maps??
-
-            # cuboid
-            #cuboid = Variable(targets['cuboid'].cuda())
-            #print("_runnetwork:cuboid: ", cuboid)
 
             # pose_transform
             pose_transform = 0
             pose_transform = targets['pose_transform']
 
-            #pose_transform = Variable(targets['pose_transform'].cuda())
-            #print("_runnetwork:pose_transform: ", pose_transform)
-            #pose_transform = data['pose_transform']
-            #print("_runnetwork:pose_transform: ", pose_transform)
+            # pose_transform = Variable(targets['pose_transform'].cuda())
+            # print("_runnetwork:pose_transform: ", pose_transform)
+            # pose_transform = data['pose_transform']
+            # print("_runnetwork:pose_transform: ", pose_transform)
 
-            #Tensor to Np.Array
+            # Tensor to Np.Array
             pose_transform = np.asarray(pose_transform)
-            #print("_runnetwork:ADDErrorCuboid:pose_transform:type: ", type(pose_transform))
-            #print("_runnetwork:ADDErrorCuboid:pose_transform: ", pose_transform)
 
-            #mean = ADDErrorCuboid(pose_transform, projected_points, cuboid)
-
-            #for tmp in pose_transform:
-                #print("_runnetwork:ADDErrorCuboid:pose_transform:type: ", type(tmp))
-                #print("_runnetwork:ADDErrorCuboid:pose_transform:tmp: ", tmp)
-            #   mean = ADDErrorCuboid(tmp, projected_points, cuboid)
-
-
-            #if pose_transform != None and projected_points != None:
-            #mean = 0
-            #mean = ADDErrorCuboid(pose_transform, projected_points, cuboid)
-            #else:
-            #    print("_runnetwork:ADDErrorCuboid: keine Ergebnisse")
-
-            #print("pose_transform: ", pose_transform)
-            #print("projected_points: ", projected_points)
-            #print("type: " + str(type(pose_transform)) + "   " + str(type(projected_points)))
+            # print("pose_transform:size: ", len(pose_transform))
+            # print("matrixHomogen:size: ", len(matrixHomogen))
             mean = 0
+            i = 0
+            for tmp_pose_transform, tmp_matrixHomogen in zip(pose_transform, matrixHomogen):
+                i = i + 1
+                # print("for tmp_pose_transform, tmp_matrixHomogen in zip(pose_transform, tmp_matrixHomogen):")
+                # print("pose_gt:pose_transform", tmp_pose_transform)
+                # print("pose_gu:tmp_matrixHomogen: ", tmp_matrixHomogen)
+                mean = ADDErrorCuboid(tmp_pose_transform, tmp_matrixHomogen, cuboid)
+            if mean != 0 and i > 1:
+                # print("ADDErrorCuboid:mean: ", mean)
+                # print("ADDErrorCuboid:i: ", i)
+                mean = (mean / i)  # Durchschnitt berechnen
+                # print("ADDErrorCuboid:mean: ", mean)
 
-            print("projected_points: ", projected_points)
-            if pose_transform != None and projected_points != None and projected_points != []:
-                for tmp_pose_transform in pose_transform:
-                    print("for tmp_pose_transform in pose_transform:pose_transform:", tmp_pose_transform)
-                    print("for tmp_pose_transform in pose_transform:projected_points: ", projected_points)
-                    mean = ADDErrorCuboid(projected_points, tmp_pose_transform, cuboid)
+            # import sys
+            # sys.exit()
 
-            #for tmp_pose_transform, tmp_projected_points in zip(pose_transform, projected_points):
-            #    print("for tmp_pose_transform, tmp_projected_points in zip(pose_transform, projected_points):")
-            #    print("pose_transform", tmp_pose_transform)
-            #    print("projected_points: ", tmp_projected_points)
-            #    mean = ADDErrorCuboid(tmp_pose_transform, tmp_projected_points, cuboid)
-                """
-                    Compute the ADD error for a given cuboid.
-                    pose_gu is the predicted pose as a matrix
-                    pose_gt is the ground thruth pose as a matrix
-                    cuboid is a Cuboid3D object (see inference/cuboid.py)
-                """
-
-
+            # the neural network outputs
+            # belief maps to know where the cuboid object is located. Using that information and
+            # the fact that we know the size and have access to the object size and the camera intrinsic
+            # we find the 3d pose of the object using PnP.
             print('Test Metric: {} [{}/{} ({:.0f}%)]\tMean: {:.15f}'.format(
                 epoch, batch_idx * len(data), len(loader.dataset),
                        100. * batch_idx / len(loader), mean))
 
-        # --------------------------------------------------------------------------------------------------------------
-        # source devel/setup.bash
-        # source /home/nils/catkin_ws/bin/activate
+            with open(opt.outf + '/test_metric.csv', 'a') as file:
+                objectdetection = 0
+                s = ''
+                if (mean != 0):
+                    objectdetection = 1
 
-        # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/Livingroom/Szene1/Room_Capturer_ZED-Camera --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
+                s = '{}, {},{:.15f},{}\n'.format(
+                    epoch, batch_idx, mean, objectdetection)
+                # print (s)
+                # else:
+                #    s = '{}, {},{:.15f}\n'.format(
+                #        epoch, batch_idx, 'False', objectdetection)
+                file.write(s)
+                # file.write("epoch, passed,total \n")
 
-        # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
+            quit()
+            # --------------------------------------------------------------------------------------------------------------
+            # delte files :
+            # You don't even need to use rm in this case if you are afraid. Use find:
+            #   find . -name "*.bak" -type f -delete
+            # But use it with precaution. Run first:
+            #   find . -name "*.bak" -type f
 
-        # Overfitting Datensatz pc
-        # python test2.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitchen_0/ --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitchen_1/ --object 003_cracker_box_16k --outf 003_cracker_box_16k
+            # source devel/setup.bash
+            # source /home/nils/catkin_ws/bin/activate
 
-        # cogsys rechner -----------------------------------------------------------------------------------------------
-        # overfitting Datensatz
-        # python train.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+            # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/Livingroom/Szene1/Room_Capturer_ZED-Camera --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
 
-        # python train.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Livingroom --datatest /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+            # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
 
-        # grossser Datensatz
-        # python test.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+            # Overfitting Datensatz pc
+            # python test2.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --object 003_cracker_box_16k --outf 003_cracker_box_16k
 
-        # kleiner Datensatz
-        # python test.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin/Room --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation   --object CandyShop2 --outf CandyShop2
+            # Overfitting Datensatz pc
+            # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_100 --datatest /media/nils/Ubuntu-TMP/CandyShop_neu/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
 
-        # python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/ --object FerreroKuesschen --outf FerreroKuesschen
-        # rsync -avz /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset/Single
-
-        # rsync -avz /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_3000/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000/
+            # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_1000 --datatest /media/nils/Ubuntu-TMP/CandyShop_neu/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
+            # train
+            # python train.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_1000 --datatest /media/nils/Ubuntu-TMP/CandyShop_neu/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
 
 
-        # Compute the Metric -------------------------------------------------------------------------------------------
+            # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Val/ --object FerreroKuesschen --outf FerreroKuesschen
+
+            # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --object FerreroKuesschen --outf FerreroKuesschen
+
+            # cogsys rechner -----------------------------------------------------------------------------------------------
+            # overfitting Datensatz
+            # /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/6000
+            # python train.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/6000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+
+            # python train.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+
+            # python train.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Livingroom --datatest /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+
+            # grossser Datensatz
+            # python test.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+
+            # kleiner Datensatz
+            # python test.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin/Room --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation   --object CandyShop2 --outf CandyShop2
+
+            # python test.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/ --object FerreroKuesschen --outf FerreroKuesschen
+            # rsync -avz /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset/Single
+
+            # rsync -avz /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_3000/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000/
+
+            # Compute the Metric -------------------------------------------------------------------------------------------
+
+        # break
+        if not opt.nbupdates is None and nb_update_network > int(opt.nbupdates):
+            torch.save(net.state_dict(), '{}/net_{}.pth'.format(opt.outf, opt.namefile))
+            break
+
+
+        # imshow(torchvision.utils.make_grid(data))
+        # print('GroundTruth: ', ' '.join('%5s' % classes[labels[j]] for j in range(4)))
 
 
 
