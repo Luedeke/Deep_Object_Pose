@@ -659,7 +659,7 @@ class MultipleVertexJson(data.Dataset):
 
         # Data Augmentation for Pose Transform
         # Wenn die Pose_Transform also die Ground truth hierbei
-        # auch mit TM und RM transformiert und rotiert werden würde,
+        # auch mit TM und RM transformiert und rotiert werden wuerde,
         # könnte die pose_transform mit dem bearbeiteten Bild in "img"
         # in der ADDErrorCuboid Methode berechnet werden.
         # new_pose_transform = Reproject(pose_transform, tm, rm)
@@ -1276,7 +1276,7 @@ parser.add_argument('--workers',
 
 parser.add_argument('--batchsize',
     type=int,
-    default=4, #TODO: default was 32 i will decrease to 16 because of the meomry
+    default=12, #TODO: default was 32 i will decrease to 16 because of the meomry
     help='input batch size')
 
 parser.add_argument('--imagesize',
@@ -2198,52 +2198,54 @@ def _runnetwork(epoch, loader, train=True):
                 # source devel/setup.bash
                 # source /home/nils/catkin_ws/bin/activate
 
-                # python train_without_freez.py --data /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/24000/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
-                # python train_without_freez2.py --data /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Livingroom/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
+                # python test2.py --data /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/24000/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
+                # python test2.py --data /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Livingroom/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
 
-                # python train_without_freez.py --data /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
+                # python test2.py --data /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
 
                 # own pc
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
+                # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Liv/ --object FerreroKuesschen --outf FerreroKuesschen
+
+                # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Livingroom/Szene/ --datatest /home/luedeke/Dataset_Luedeke_Neu/FerreroKuesschen/Testdatensatz/ --object FerreroKuesschen --outf FerreroKuesschen
 
                 # Fat datensatz
                 # result
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/Livingroom/Szene1/Room_Capturer_ZED-Camera --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/Livingroom/Szene1/Room_Capturer_ZED-Camera --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
 
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
-
-                # Overfitting Datensatz pc
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --object 003_cracker_box_16k --outf 003_cracker_box_16k
-
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/asdf/ --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitedemo_4/ --object 003_cracker_box_16k --outf 003_cracker_box_16k
+                # python test2.py --data /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_test/ --datatest /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/CandyShop/Validation  --object CandyShop2 --outf CandyShop2
 
                 # Overfitting Datensatz pc
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/Dataset_Luedeke_Neu/CandyShop/CandyShop_Overfitting_100 --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitch/ --object 003_cracker_box_16k --outf 003_cracker_box_16k
 
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/CandyShop_Overfitting_1000 --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/asdf/ --datatest /media/nils/Ubuntu-TMP/fat/single/003_cracker_box_16k/kitedemo_4/ --object 003_cracker_box_16k --outf 003_cracker_box_16k
+
+                # Overfitting Datensatz pc
+                # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/Dataset_Luedeke_Neu/CandyShop/CandyShop_Overfitting_100 --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
+
+                # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/CandyShop_Overfitting_1000 --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
                 # train
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/CandyShop_Overfitting_1000 --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/CandyShop_Overfitting_1000 --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/CandyShop/Livingroom/Szene1/Room_Capturer_ZED-Camera --object CandyShop2 --outf CandyShop2
 
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Val/ --object FerreroKuesschen --outf FerreroKuesschen
+                # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Val/ --object FerreroKuesschen --outf FerreroKuesschen
 
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --object FerreroKuesschen --outf FerreroKuesschen
+                # python test2.py --data /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --datatest /media/nils/Ubuntu-TMP/Dataset_Luedeke_Neu/FerreroKuesschen/Overfitting --object FerreroKuesschen --outf FerreroKuesschen
 
                 # cogsys rechner -----------------------------------------------------------------------------------------------
                 # overfitting Datensatz
                 # /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/6000
-                # python train_without_freez.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/6000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/6000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
 
-                # python train_without_freez.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000 --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
 
-                # python train_without_freez.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Livingroom --datatest /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Livingroom --datatest /home/luedeke/Stereo_Dataset_neu/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
 
                 # grossser Datensatz
-                # python train_without_freez.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation --object CandyShop2 --outf CandyShop2
 
                 # kleiner Datensatz
-                # python train_without_freez.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin/Room --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation   --object CandyShop2 --outf CandyShop2
+                # python test2.py --data /home/luedeke/Stereo_Dataset/Single/CandyShop/RoomAndBerlin/Room --datatest /home/luedeke/Stereo_Dataset/Single/CandyShop/Validation   --object CandyShop2 --outf CandyShop2
 
-                # python train_without_freez.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/ --object FerreroKuesschen --outf FerreroKuesschen
+                # python test2.py --data /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/ --object FerreroKuesschen --outf FerreroKuesschen
                 # rsync -avz /media/nils/Ubuntu-TMP/Stereo_Dataset_Luedeke/single/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset/Single
 
                 # rsync -avz /media/nils/Ubuntu-TMP/CandyShop_neu/CandyShop_Overfitting_3000/ luedeke@dlsys-MACHINE:/home/luedeke/Stereo_Dataset_neu/Single/CandyShop/CandyShop_Overfitting_3000/

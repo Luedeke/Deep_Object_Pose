@@ -576,7 +576,7 @@ class MultipleVertexJson(data.Dataset):
 
         # Data Augmentation for Pose Transform
         # Wenn die Pose_Transform also die Ground truth hierbei
-        # auch mit TM und RM transformiert und rotiert werden würde,
+        # auch mit TM und RM transformiert und rotiert werden wuerde,
         # könnte die pose_transform mit dem bearbeiteten Bild in "img"
         # in der ADDErrorCuboid Methode berechnet werden.
         # new_pose_transform = Reproject(pose_transform, tm, rm)
