@@ -106,9 +106,6 @@ sys.path.append("{}/src/inference".format(g_path2package))
 from cuboid import *
 from detector import *
 
-#ros msg
-from geometry_msgs.msg import PoseStamped
-
 ### Global Variables
 g_bridge = CvBridge()
 
@@ -461,7 +458,9 @@ class MultipleVertexJson(data.Dataset):
         self.imgs = load_data(root)
 
         # Shuffle the data, this is useful when we want to use a subset. 
-        np.random.shuffle(self.imgs)
+        # np.random.shuffle(self.imgs)
+        # Deactivated for the metric,
+        # Damit pose_transform und die predicted pose zusammen passen ...
 
     def __len__(self):
         # When limiting the number of data
@@ -566,6 +565,7 @@ class MultipleVertexJson(data.Dataset):
             return new_cuboid
 
         # Random image manipulation, rotation and translation with zero padding
+        # also called Data Augmentation
         dx = round(np.random.normal(0, 2) * float(self.random_translation[0]))
         dy = round(np.random.normal(0, 2) * float(self.random_translation[1]))
         angle = round(np.random.normal(0, 1) * float(self.random_rotation))
@@ -573,6 +573,13 @@ class MultipleVertexJson(data.Dataset):
         tm = np.float32([[1, 0, dx], [0, 1, dy]])
         rm = cv2.getRotationMatrix2D(
             (img.size[0]/2, img.size[1]/2), angle, 1)
+
+        # Data Augmentation for Pose Transform
+        # Wenn die Pose_Transform also die Ground truth hierbei
+        # auch mit TM und RM transformiert und rotiert werden würde,
+        # könnte die pose_transform mit dem bearbeiteten Bild in "img"
+        # in der ADDErrorCuboid Methode berechnet werden.
+        # new_pose_transform = Reproject(pose_transform, tm, rm)
 
         for i_objects in range(len(pointsBelief)):
             points = pointsBelief[i_objects]
@@ -730,11 +737,18 @@ class MultipleVertexJson(data.Dataset):
         if affinities.size()[2] == 49 and not self.test:
             affinities = torch.cat([affinities,torch.zeros(16,50,1)],dim=2)
 
+        # For Metric
+        transform456 = transforms.Compose([
+            transforms.Resize(opt.imagesize),
+            transforms.ToTensor()])
+
+        img_original = transform456(img_original)
         return {
             'img':img,    
             "affinities":affinities,            
             'beliefs':beliefs,
             'pose_transform': pose_transform,
+            'img_original': img_original,
         }
 
 #-----------------------------------------------------------------------------------------------------------------------
@@ -1227,8 +1241,8 @@ def normQ(q):
 ##################################################
 # TRAINING CODE MAIN STARTING HERE
 ##################################################
-startTime = datetime.datetime.now().time()
-print ("start:" , startTime)
+start_time = datetime.datetime.now().time()
+print ("start:", start_time)
 
 conf_parser = argparse.ArgumentParser(
     description=__doc__, # printed with -h/--help
@@ -1346,10 +1360,12 @@ parser.set_defaults(**defaults)
 parser.add_argument("--option")
 opt = parser.parse_args(remaining_argv)
 
-
 if opt.pretrained in ['false', 'False']:
 	opt.pretrained = False
 
+#-----------------------------------------------------------------------------------------------------------------------
+# OPT SAVE IMAGES? -----------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
 if not "/" in opt.outf:
     opt.outf = "train_{}".format(opt.outf)
 
@@ -1369,14 +1385,10 @@ with open (opt.outf+'/header.txt','a') as file:
     file.write(str(opt))
     file.write("seed: "+ str(opt.manualseed)+'\n')
 
-
 with open (opt.outf+'/header.txt','a') as file:
-    file.write("\nstart: " + str(startTime)+"\n")
+    file.write("\nstart: " + str(start_time)+"\n")
 
-with open (opt.outf+'/test_metric.csv','w') as file:
-        file.write("epoch, passed,total \n")
-
-# set the manual seed. 
+# set the manual seed.
 random.seed(opt.manualseed)
 torch.manual_seed(opt.manualseed)
 torch.cuda.manual_seed_all(opt.manualseed)
@@ -1481,6 +1493,12 @@ with open (opt.outf+'/loss_train.csv','w') as file:
 with open (opt.outf+'/loss_test.csv','w') as file: 
     file.write('epoch,batchid,loss\n')
 
+with open (opt.outf+'/test_metric.csv','w') as file:
+    file.write("epoch,batchid,mean,detected_images,possible_images\n")
+
+with open (opt.outf+'/train_metric.csv','w') as file:
+    file.write("epoch,batchid,mean,detected_images,possible_images\n")
+
 #-----------------------------------------------------------------------------------------------------------------------
 # init config_pose_rosbag-----------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
@@ -1571,19 +1589,17 @@ def _runnetwork(epoch, loader, train=True):
 
         if train:
             if batch_idx % opt.loginterval == 0:
+                length_data = str(len(loader.dataset))
+                length_data_count = len(length_data)
+                test = batch_idx * len(data)
+                asdf = str(test).zfill(length_data_count)
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
-                    epoch, batch_idx * len(data), len(loader.dataset),
-                    100. * batch_idx / len(loader), loss.data[0]))
-        else:
-            if batch_idx % opt.loginterval == 0:
-                print('Test Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
-                    epoch, batch_idx * len(data), len(loader.dataset),
+                    epoch, asdf, len(loader.dataset),
                     100. * batch_idx / len(loader), loss.data[0]))
 
                 # Compute the Metric ---------------------------------------------------------------------------------------
-                # print("data: ", data)
                 pnp_solvers = {}
-                results = {}
+                results_insg = []
 
                 matrix_camera = 0
                 # matrix_camera = Variable(targets['matrix_camera'].cuda())
@@ -1594,26 +1610,158 @@ def _runnetwork(epoch, loader, train=True):
                 matrix_camera[0, 2] = params["camera_settings"]['cx']
                 matrix_camera[1, 2] = params["camera_settings"]['cy']
                 matrix_camera[2, 2] = 1
-                # print("matrix_camera ", matrix_camera)
+
+                cuboid = 0
+
+                for model in params['weights']:
+                    # print("for model in params['weights']:model: ", model)
+                    cuboid = Cuboid3d(params['dimensions'][model])
+                    # print("params['dimensions'][model]: ", params['dimensions'][model])
+                    # print("params['draw_colors'][model]: ", params["draw_colors"][model])
+                    # init pnp_solversf
+                    pnp_solvers[model] = \
+                        CuboidPNPSolver(
+                            model,
+                            matrix_camera,
+                            Cuboid3d(params['dimensions'][model]),
+                            dist_coeffs=dist_coeffs
+                        )
+
+                    img_org = targets['img_original']
+                    # print("img_org: ", img_org)
+                    # print("img_org:type: ", type(img_org))
+
+                    # image_tensor = transform(g_img)
+                    i = 0
+                    for images_tmp in img_org:
+                        # print("images_tmp: ", images_tmp)
+                        # print("images_tmp:len ", len(images_tmp))
+                        # print("images_tmp:type: ", type(images_tmp))
+
+                        # Detect object
+                        # save_image(images_tmp, '{}/train_indetector_{}.png'.format(opt.outf, str(batch_idx + i).zfill(5)),
+                        #       mean=0, std=1)
+
+                        image_torch = Variable(images_tmp).cuda().unsqueeze(0)
+                        res = ObjectDetector.detect_object_in_image_alreadytensor(
+                            net,
+                            pnp_solvers[model],
+                            image_torch,
+                            config_detect
+                        )
+                        # print("_runnetwork:res: ", res)
+                        if res == []:
+                            results_insg.append("test")
+                        else:
+                            results_insg.append(res)
+                        i = i + 1
+                    # print("_runnetwork:results_insg: ", results_insg)
+                    # Find objects from network output
+                    # print("_runnetwork:results: ", results)
+
+                matrixHomogen = []
+                for res in results_insg:
+                    # print("for res in results_insg:")
+                    if res == 'test':
+                        matrixHomogen.append("test")
+                        # print("asdfasfdsdf: ")
+                    else:
+                        # print("else")
+                        for i_r, result in enumerate(res):  # enumerate(results):
+                            # print("result: ", result)
+                            if result["location"] is None:
+                                continue
+                            # print("_runnetwork:results: ", results)
+                            object_name = result['name']  # welches objekt gefunden wurde
+                            loc = result["location"]  # translation
+                            ori = result["quaternion"]  # rotation
+
+                            # Rx + T homogene Rigid body tramsformation
+                            # quaternion zu Rotationsmatrix berechne + Transformation = Rx +T
+                            quaternation = 0
+                            quaternation = QtoR(ori)
+                            # print("loadjson:quaternation: ", quaternation)
+                            # print("loadjson:quaternation: ", type(quaternation))
+
+                            tmp = np.insert(quaternation, 3, loc, axis=0)
+                            # print("loadjson:insert: ", tmp)
+                            # print("loadjson:insert:type: ", type(tmp))
+                            # np.set_printoptions(precision=10)
+
+                            resultPoseGU = np.insert(tmp, 3, [0, 0, 0, 1], axis=1)
+                            matrixHomogen.append(resultPoseGU)
+                            # print("loadjson:result: ", resultPoseGU)
+                # https://stats.stackexchange.com/questions/291820/what-is-the-definition-of-a-feature-map-aka-activation-map-in-a-convolutio
+                # and feature maps??
+
+                # pose_transform
+                pose_transform = 0
+                pose_transform = targets['pose_transform']
+                # np.set_printoptions(precision=10)
+
+                mean = 0
+                i = 0  # Wie viele erkannt wurden np und fp
+                image_size = len(pose_transform)  # How many Images wurden getestet
+
+                # print("Train Metric:for tmp_pose_transform, tmp_matrixHomogen in zip(pose_transform, tmp_matrixHomogen):")
+                for tmp_pose_transform, tmp_matrixHomogen in zip(pose_transform, matrixHomogen):
+                    # print("Train Metric:pose_gt:pose_transform", tmp_pose_transform)
+                    # print("Train Metric:pose_gu:tmp_matrixHomogen: ", tmp_matrixHomogen)
+                    if tmp_matrixHomogen != 'test':
+                        print("Train Metric:pose_gt:pose_transform", tmp_pose_transform)
+                        print("Train Metric:pose_gu:tmp_matrixHomogen: ", tmp_matrixHomogen)
+                        tmp = ADDErrorCuboid(tmp_pose_transform, tmp_matrixHomogen, cuboid)
+                        print("Train Metric:ADDErrorCuboid:mean: ", tmp)
+                        mean = mean + tmp
+                        i = i + 1
+                    # else:
+                    # print("ADDErrorCuboid:mean: wrong")
+                if mean != 0 and i > 1:
+                    # print("ADDErrorCuboid:i: ", i)
+                    mean = (mean / i)  # Durchschnitt berechnen
+                    # print("ADDErrorCuboid:Durchschnitt:mean: ", mean)
+
+                # the neural network outputs
+                # belief maps to know where the cuboid object is located. Using that information and
+                # the fact that we know the size and have access to the object size and the camera intrinsic
+                # we find the 3d pose of the object using PnP.
+                length_data = str(len(loader.dataset))
+                length_data_count = len(length_data)
+                test = batch_idx * len(data)
+                asdf = str(test).zfill(length_data_count)
+                print('Train Metric: {} [{}/{} ({:.0f}%)]\tMean: {:.15f}'.format(
+                    epoch, asdf, len(loader.dataset),
+                    100. * batch_idx / len(loader), mean))
+
+                with open(opt.outf + '/train_metric.csv', 'a') as file:
+                    # i = 0  # Wie viele erkannt wurden np und fp
+                    # image_size = len(img_org)  # How many Images wurden getestet
+                    s = '{}, {},{:.15f},{},{}\n'.format(
+                        epoch, batch_idx, mean, i, image_size)
+                    file.write(s)
+        else:
+            if batch_idx % opt.loginterval == 0:
+                print('Test Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
+                    epoch, batch_idx * len(data), len(loader.dataset),
+                    100. * batch_idx / len(loader), loss.data[0]))
+
+                # Compute the Metric -----------------------------------------------------------------------------------
+                pnp_solvers = {}
+
+                matrix_camera = 0
+                # matrix_camera = Variable(targets['matrix_camera'].cuda())
+                # Initialize matrix_camera parameters
+                matrix_camera = np.zeros((3, 3))
+                matrix_camera[0, 0] = params["camera_settings"]['fx']
+                matrix_camera[1, 1] = params["camera_settings"]['fy']
+                matrix_camera[0, 2] = params["camera_settings"]['cx']
+                matrix_camera[1, 2] = params["camera_settings"]['cy']
+                matrix_camera[2, 2] = 1
 
                 cuboid = 0
                 results = 0
-                projected_points = np.empty((0))
-                detected_objects = 0
-
                 for model in params['weights']:
                     #print("for model in params['weights']:model: ", model)
-
-                    # for img in data:
-                    # print("Image: ", img)
-                    #print("data: ", data)
-                    #print("data:length: ", len(data))
-                    #print("data:type: ", type(data))
-                    #a = data.cpu().numpy()
-                    #for img in data:
-                    #    print("Image: ", img)
-                    #    print("Image:length: ", len(img))
-                    #    print("Image:type: ", type(img))
 
                     cuboid = Cuboid3d(params['dimensions'][model])
                     #print("params['dimensions'][model]: ", params['dimensions'][model])
@@ -1627,24 +1775,15 @@ def _runnetwork(epoch, loader, train=True):
                             dist_coeffs=dist_coeffs
                         )
 
-                    # Detect object
-                    #for imgasdf in data:
-                    #    res = ObjectDetector.detect_object_in_image(
-                    #        net,
-                    #        pnp_solvers[model],
-                    #        imgasdf,
-                    #        config_detect
-                    #    )
-                    #results.append(res)
+                    img_org = Variable(targets['img_original'].cuda())
 
                     results = ObjectDetector.detect_object_in_image_alreadytensor(
                         net,
                         pnp_solvers[model],
-                        data,
+                        img_org,
                         config_detect
                     )
                     # Find objects from network output
-                    # detected_objects = ObjectDetector.find_object_poses(vertex2, aff, pnp_solvers[model], config)
                     # print("_runnetwork:detected_objects: ", detected_objects)
                     # print("_runnetwork:results: ", results)
 
