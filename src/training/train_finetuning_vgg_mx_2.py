@@ -1276,7 +1276,7 @@ parser.add_argument('--workers',
 
 parser.add_argument('--batchsize',
     type=int,
-    default=30, #TODO: default was 32 i will decrease to 16 because of the meomry
+    default=8, #TODO: default was 32 i will decrease to 16 because of the meomry
     help='input batch size')
 
 parser.add_argument('--imagesize',
@@ -1516,8 +1516,6 @@ with open (opt.outf+'/header.txt','a') as file:
 
 #print ('Modell:')
 #print (model)
-with open (opt.outf+'/header.txt','a') as file:
-    file.write("\nModell: " + str(net)+"\n")
 
 # Freeze vgg model weights
 #for param in net.module.vgg.parameters():
@@ -1550,11 +1548,11 @@ for param in net.module.m5_1.parameters():
 for param in net.module.m6_1.parameters():
     param.requires_grad = False
 
+with open (opt.outf+'/header.txt','a') as file:
+    file.write("\nTrained on vgg and m*_2 layers\nLayer m*_1 eingrforen")
+
 #for param in net.parameters():
 #   print("param: ", param.requires_grad)
-
-with open (opt.outf+'/header.txt','a') as file:
-    file.write("\nFinetuning on m*_1 Layers\n")
 
 #quit()
 
@@ -1572,7 +1570,7 @@ with open (opt.outf+'/header.txt','a') as file:
 #net.module.m6_1 = None #Remove complete Stage
 
 
-list(net.modules()) # to inspect the modules of your model
+#list(net.modules()) # to inspect the modules of your model
 #print ('Modell after deleted fully convolutional:')
 #print (net.module)
 

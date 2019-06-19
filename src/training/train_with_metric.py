@@ -577,7 +577,7 @@ class MultipleVertexJson(data.Dataset):
         # Data Augmentation for Pose Transform
         # Wenn die Pose_Transform also die Ground truth hierbei
         # auch mit TM und RM transformiert und rotiert werden wuerde,
-        # könnte die pose_transform mit dem bearbeiteten Bild in "img"
+        # koennte die pose_transform mit dem bearbeiteten Bild in "img"
         # in der ADDErrorCuboid Methode berechnet werden.
         # new_pose_transform = Reproject(pose_transform, tm, rm)
 
@@ -1593,7 +1593,7 @@ def _runnetwork(epoch, loader, train=True):
                 length_data_count = len(length_data)
                 test = batch_idx * len(data)
                 asdf = str(test).zfill(length_data_count)
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
+                print('Train Epoch:  {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
                     epoch, asdf, len(loader.dataset),
                     100. * batch_idx / len(loader), loss.data[0]))
 

@@ -1276,7 +1276,7 @@ parser.add_argument('--workers',
 
 parser.add_argument('--batchsize',
     type=int,
-    default=30, #TODO: default was 32 i will decrease to 16 because of the meomry
+    default=18, #TODO: default was 32 i will decrease to 16 because of the meomry
     help='input batch size')
 
 parser.add_argument('--imagesize',
@@ -1514,27 +1514,25 @@ with open (opt.outf+'/header.txt','a') as file:
 #print ('Evaluate Model')
 #net.eval()
 
-#print ('Modell:')
+print ('Modell:')
 #print (model)
-with open (opt.outf+'/header.txt','a') as file:
-    file.write("\nModell: " + str(net)+"\n")
 
 # Freeze vgg model weights
 #for param in net.module.vgg.parameters():
     #param.requires_grad = False
 # Freeze model weights
-#for param in net.module.m1_2.parameters():
-#    param.requires_grad = False
-#for param in net.module.m2_2.parameters():
-#    param.requires_grad = False
-#for param in net.module.m3_2.parameters():
-#    param.requires_grad = False
-#for param in net.module.m4_2.parameters():
-#    param.requires_grad = False
-#for param in net.module.m5_2.parameters():
-#    param.requires_grad = False
-#for param in net.module.m6_2.parameters():
-#    param.requires_grad = False
+for param in net.module.m1_2.parameters():
+    param.requires_grad = False
+for param in net.module.m2_2.parameters():
+    param.requires_grad = False
+for param in net.module.m3_2.parameters():
+    param.requires_grad = False
+for param in net.module.m4_2.parameters():
+    param.requires_grad = False
+for param in net.module.m5_2.parameters():
+    param.requires_grad = False
+for param in net.module.m6_2.parameters():
+    param.requires_grad = False
 
 # Freeze model weights
 for param in net.module.m1_1.parameters():
@@ -1553,9 +1551,6 @@ for param in net.module.m6_1.parameters():
 #for param in net.parameters():
 #   print("param: ", param.requires_grad)
 
-with open (opt.outf+'/header.txt','a') as file:
-    file.write("\nFinetuning on m*_1 Layers\n")
-
 #quit()
 
 #How to remove the last FC layer from a ResNet model in PyTorch?
@@ -1573,11 +1568,11 @@ with open (opt.outf+'/header.txt','a') as file:
 
 
 list(net.modules()) # to inspect the modules of your model
-#print ('Modell after deleted fully convolutional:')
-#print (net.module)
+print ('Modell after deleted fully convolutional:')
+print (net.module)
 
-#with open (opt.outf+'/header.txt','a') as file:
-#    file.write("\nModel after deleted fully convolutional: " + str(net.module)+"\n")
+with open (opt.outf+'/header.txt','a') as file:
+    file.write("\nModel after deleted fully convolutional: " + str(net.module)+"\n")
 
 
 #Fine-tune the last LAyer
@@ -1636,10 +1631,10 @@ my_model1123 = DopeNetwork.create_stage(128 + numBeliefMap + numAffinity,
 net.cuda() # this or the other one?
 #net = torch.nn.DataParallel(net,device_ids=opt.gpuids).cuda() #Push model to Cuda?
 
-#print('Modell neu:')
-#print(net)
-#with open (opt.outf+'/header.txt','a') as file:
-#    file.write("\nModell neu: " + str(net)+"\n")
+print('Modell neu:')
+print(net)
+with open (opt.outf+'/header.txt','a') as file:
+    file.write("\nModell neu: " + str(net)+"\n")
 
 
 print ('finished Fine-tuning configuration')

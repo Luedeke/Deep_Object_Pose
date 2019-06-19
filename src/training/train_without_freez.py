@@ -673,7 +673,7 @@ class MultipleVertexJson(data.Dataset):
         # Data Augmentation for Pose Transform
         # Wenn die Pose_Transform also die Ground truth hierbei
         # auch mit TM und RM transformiert und rotiert werden wuerde,
-        # könnte die pose_transform mit dem bearbeiteten Bild in "img"
+        # koennte die pose_transform mit dem bearbeiteten Bild in "img"
         # in der ADDErrorCuboid Methode berechnet werden.
         #new_pose_transform = Reproject(pose_transform, tm, rm)
 
@@ -1546,7 +1546,9 @@ net.cuda() # this or the other one?
 with open (opt.outf+'/header.txt','a') as file:
     file.write("\nModell: " + str(net)+"\n")
 
-
+with open (opt.outf+'/header.txt','a') as file:
+    file.write("\nFinetuning complete Network without freezing on the file above.\n")
+print("\nFinetuning complete Network without freezing on the file above.\n")
 print ('Finished configuration')
 
 #python train.py --data path/to/FAT --object soup --outf soup
@@ -1814,7 +1816,7 @@ def _runnetwork(epoch, loader, train=True):
                 length_data_count = len(length_data)
                 test = batch_idx * len(data)
                 asdf = str(test).zfill(length_data_count)
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
+                print('Train Epoch:  {} [{}/{} ({:.0f}%)]\tLoss: {:.15f}'.format(
                     epoch, asdf, len(loader.dataset),
                            100. * batch_idx / len(loader), loss.data[0]))
 
@@ -2276,12 +2278,12 @@ for file in files:
         #   print(tmpy[i])
 
     #plt.plot(tmpx,tmpy, label='DOPE: Fine-Tuning Layer:' + str(deleted_layers))
-    plt.xlabel('Epoche')
-    plt.ylabel('Loss')
-    plt.title('DOPE')
-    plt.legend()
+    #plt.xlabel('Epoche')
+    #plt.ylabel('Loss')
+    #plt.title('DOPE')
+    #plt.legend()
     #plt.show()
-    plt.savefig(file + '.png', dpi=300)
+    #plt.savefig(file + '.png', dpi=300)
 
 #Finished then print table loss-----------------------------------------------------------------------------------------
 
